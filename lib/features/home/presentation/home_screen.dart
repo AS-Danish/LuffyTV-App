@@ -7,7 +7,7 @@ import 'package:luffytv/core/widgets/top_bar.dart';
 import 'package:luffytv/core/widgets/category_tabs.dart';
 import 'package:luffytv/core/widgets/hero_section.dart';
 import 'package:luffytv/core/widgets/section_row.dart';
-import 'package:luffytv/core/widgets/floating_nav.dart';
+import 'package:luffytv/core/widgets/section_row.dart';
 
 /// A senior-dev home screen reads like a table of contents — each
 /// section is a named widget, and there's no inline layout logic here
@@ -26,32 +26,27 @@ class HomeScreen extends ConsumerWidget {
       backgroundColor: AppColors.bg,
       body: Container(
         decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
-        child: Stack(
-          children: [
-            SafeArea(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.only(bottom: 140, left: r.screenPadding, right: r.screenPadding, top: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const TopBar(),
-                    const SizedBox(height: 20),
-                    const CategoryTabs(),
-                    const SizedBox(height: 20),
-                    const HeroSection(),
-                    const SizedBox(height: 32),
-                    SectionRow(title: "Editor's Picks", items: editorsPicks),
-                    const SizedBox(height: 32),
-                    SectionRow(title: "Trending Now", items: trendingNow),
-                    const SizedBox(height: 32),
-                    SectionRow(title: "New Episodes", items: newEpisodes),
-                    const SizedBox(height: 32),
-                  ],
-                ),
-              ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.only(bottom: 140, left: r.screenPadding, right: r.screenPadding, top: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const TopBar(),
+                const SizedBox(height: 20),
+                const CategoryTabs(),
+                const SizedBox(height: 20),
+                const HeroSection(),
+                const SizedBox(height: 32),
+                SectionRow(title: "Editor's Picks", items: editorsPicks),
+                const SizedBox(height: 32),
+                SectionRow(title: "Trending Now", items: trendingNow),
+                const SizedBox(height: 32),
+                SectionRow(title: "New Episodes", items: newEpisodes),
+                const SizedBox(height: 32),
+              ],
             ),
-            const Positioned(left: 0, right: 0, bottom: 0, child: FloatingNav()),
-          ],
+          ),
         ),
       ),
     );

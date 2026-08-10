@@ -9,9 +9,9 @@ class FloatingNav extends ConsumerWidget {
 
   static const _icons = [
     Icons.home_rounded,
-    Icons.chat_bubble_outline_rounded,
     Icons.search_rounded,
-    Icons.download_rounded,
+    Icons.favorite_outline_rounded,
+    Icons.person_outline_rounded,
   ];
 
   @override

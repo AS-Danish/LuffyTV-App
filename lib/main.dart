@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
-import 'package:luffytv/features/home/presentation/home_screen.dart';
+import 'package:luffytv/main_nav_screen.dart';
 
 Future<void> main() async {
   /*await Supabase.initialize(url: 'url');*/
@@ -18,7 +18,7 @@ class MyApp extends StatelessWidget {
       title: 'Luffy TV',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      home: const HomeScreen()
+      home: const MainNavScreen()
     );
   }
 }
