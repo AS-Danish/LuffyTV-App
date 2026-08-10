@@ -35,61 +35,62 @@ class DownloadsScreen extends ConsumerWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.download_done_rounded, size: 80, color: Colors.white.withOpacity(0.1)),
+                    Icon(Icons.download_done_rounded, size: 80, color: Colors.white.withValues(alpha: 0.1)),
                     const SizedBox(height: 16),
-                    Text('No downloaded anime yet', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 16)),
+                    Text('No downloaded anime yet', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 16)),
                   ],
                 )
               );
             }
-            return ListView.builder(
+            return ListView(
               padding: const EdgeInsets.all(20),
-              itemCount: animes.length,
-              itemBuilder: (context, index) {
-                final anime = animes[index];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  height: 120,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 85,
-                        height: 120,
-                        child: PosterCard(anime: anime, width: 85, height: 120, radius: 16),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(anime.title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 4),
-                            Text('12 Episodes • 2.4 GB', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                const Icon(Icons.check_circle_rounded, color: AppColors.accentStart, size: 16),
-                                const SizedBox(width: 4),
-                                const Text('Downloaded', style: TextStyle(color: AppColors.accentStart, fontSize: 12, fontWeight: FontWeight.w600)),
-                              ],
-                            )
-                          ],
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.settings, color: Colors.white70, size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Smart Downloads', style: TextStyle(color: Colors.white70, fontSize: 15, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    const Icon(Icons.edit, color: Colors.white70, size: 20),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                ...animes.map((anime) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 130,
+                          height: 75,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            gradient: anime.posterUrl == null ? LinearGradient(
+                              colors: AppColors.cardGradients[anime.gradientIndex % AppColors.cardGradients.length],
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                            ) : null,
+                            image: anime.posterUrl != null ? DecorationImage(image: NetworkImage(anime.posterUrl!), fit: BoxFit.cover) : null,
+                          ),
+                          child: const Center(child: Icon(Icons.play_circle_outline, color: Colors.white, size: 32)),
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline_rounded, color: Colors.white54),
-                        onPressed: () {},
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                  ),
-                );
-              },
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(anime.title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 4),
+                              Text('12 Episodes • 2.4 GB', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
+                      ],
+                    ),
+                  );
+                }),
+              ],
             );
           },
         ),

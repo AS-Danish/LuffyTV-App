@@ -20,24 +20,34 @@ class ProfileScreen extends StatelessWidget {
               Center(
                 child: Column(
                   children: [
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: AppColors.accentGradient,
-                        image: const DecorationImage(
-                          image: NetworkImage('https://i.pravatar.cc/150?img=11'), // Dummy avatar
-                          fit: BoxFit.cover,
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            gradient: AppColors.accentGradient,
+                            image: const DecorationImage(
+                              image: NetworkImage('https://i.pravatar.cc/150?img=11'),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.accentStart.withOpacity(0.4),
-                            blurRadius: 20,
-                            spreadRadius: 2,
-                          )
-                        ],
-                      ),
+                        Positioned(
+                          bottom: 0,
+                          child: Container(
+                            width: 100,
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                            ),
+                            child: const Icon(Icons.edit, color: Colors.white, size: 16),
+                          ),
+                        )
+                      ],
                     ),
                     const SizedBox(height: 16),
                     const Text(
@@ -104,7 +114,7 @@ class ProfileScreen extends StatelessWidget {
       leading: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: (iconColor ?? Colors.white).withOpacity(0.1),
+          color: (iconColor ?? Colors.white).withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: iconColor ?? Colors.white, size: 24),
@@ -113,7 +123,7 @@ class ProfileScreen extends StatelessWidget {
         title,
         style: TextStyle(color: textColor ?? Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
       ),
-      trailing: Icon(Icons.chevron_right_rounded, color: Colors.white.withOpacity(0.3)),
+      trailing: Icon(Icons.chevron_right_rounded, color: Colors.white.withValues(alpha: 0.3)),
       onTap: onTap,
     );
   }

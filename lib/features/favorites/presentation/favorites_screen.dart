@@ -22,8 +22,8 @@ class FavoritesScreen extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Padding(
-                padding: EdgeInsets.fromLTRB(20, 24, 20, 16),
-                child: Text('My Favorites', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
+                padding: EdgeInsets.fromLTRB(12, 16, 12, 12),
+                child: Text('My List', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
               ),
               Expanded(
                 child: favorites.when(
@@ -34,12 +34,12 @@ class FavoritesScreen extends ConsumerWidget {
                       return Center(child: Text('No favorites yet', style: AppTextStyles.body));
                     }
                     return GridView.builder(
-                      padding: const EdgeInsets.only(left: 20, right: 20, bottom: 120), // Padding for bottom nav
+                      padding: const EdgeInsets.only(left: 8, right: 8, bottom: 120),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
+                        crossAxisCount: 3,
                         childAspectRatio: 0.7,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
                       ),
                       itemCount: animes.length,
                       itemBuilder: (context, index) {

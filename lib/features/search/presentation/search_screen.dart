@@ -4,6 +4,7 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/features/home/providers/anime_providers.dart';
 import 'package:luffytv/core/widgets/poster_card.dart';
+import 'package:luffytv/features/details/presentation/anime_details_screen.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -47,8 +48,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   },
                   decoration: InputDecoration(
                     hintText: 'Search anime, movies, genres...',
-                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
-                    prefixIcon: Icon(Icons.search, color: Colors.white.withOpacity(0.5)),
+                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                    prefixIcon: Icon(Icons.search, color: Colors.white.withValues(alpha: 0.5)),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear, color: Colors.white70),
@@ -61,7 +62,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           )
                         : null,
                     filled: true,
-                    fillColor: Colors.white.withOpacity(0.05),
+                    fillColor: Colors.white.withValues(alpha: 0.05),
                     contentPadding: const EdgeInsets.symmetric(vertical: 16),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -72,15 +73,52 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
               if (!_isSearching)
                 Expanded(
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.search_rounded, size: 80, color: Colors.white.withOpacity(0.1)),
-                        const SizedBox(height: 16),
-                        Text('Find your next favorite anime', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 16)),
-                      ],
-                    ),
+                  child: mockResults.when(
+                    loading: () => const Center(child: CircularProgressIndicator(color: AppColors.accentStart)),
+                    error: (err, _) => Center(child: Text('Error loading results', style: AppTextStyles.body)),
+                    data: (animes) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                            child: Text('Top Searches', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                          ),
+                          Expanded(
+                            child: ListView.builder(
+                              padding: const EdgeInsets.only(bottom: 120),
+                              itemCount: animes.length,
+                              itemBuilder: (context, index) {
+                                final anime = animes[index];
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                                  leading: Container(
+                                    width: 130,
+                                    height: 75,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(4),
+                                      gradient: anime.posterUrl == null ? LinearGradient(
+                                        colors: AppColors.cardGradients[anime.gradientIndex % AppColors.cardGradients.length],
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                      ) : null,
+                                      image: anime.posterUrl != null ? DecorationImage(image: NetworkImage(anime.posterUrl!), fit: BoxFit.cover) : null,
+                                    ),
+                                  ),
+                                  title: Text(anime.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                                  trailing: const Icon(Icons.play_circle_outline, color: Colors.white, size: 32),
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(builder: (context) => AnimeDetailsScreen(anime: anime)),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 )
               else

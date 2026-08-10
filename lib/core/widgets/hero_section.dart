@@ -81,7 +81,7 @@ class _HeroSectionState extends ConsumerState<HeroSection> {
                     shape: BoxShape.circle,
                     color: _currentIndex == entry.key
                         ? AppColors.accentStart
-                        : Colors.white.withOpacity(0.2),
+                        : Colors.white.withValues(alpha: 0.2),
                   ),
                 );
               }).toList(),
@@ -99,35 +99,40 @@ class _ActionButtons extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        const SizedBox(width: 20),
+        _buildActionIcon(Icons.add, 'My List'),
+        const Spacer(),
         Container(
-          height: 48,
+          height: 44,
           padding: const EdgeInsets.symmetric(horizontal: 24),
           decoration: BoxDecoration(
             gradient: AppColors.accentGradient,
-            borderRadius: BorderRadius.circular(AppRadius.full),
-            boxShadow: [BoxShadow(color: AppColors.accentStart.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 6))],
+            borderRadius: BorderRadius.circular(4),
+            boxShadow: [BoxShadow(color: AppColors.accentStart.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 4))],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 20),
-              const SizedBox(width: 6),
-              Text('Watch S1 E1', style: AppTextStyles.button),
+              const Icon(Icons.play_arrow, color: Colors.white, size: 28),
+              const SizedBox(width: 4),
+              Text('Play', style: AppTextStyles.button.copyWith(color: Colors.white, fontSize: 16)),
             ],
           ),
         ),
-        const SizedBox(width: 12),
-        Container(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(AppRadius.full),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Text('Details', style: AppTextStyles.button.copyWith(color: AppColors.textPrimary)),
-        ),
+        const Spacer(),
+        _buildActionIcon(Icons.info_outline, 'Info'),
+        const SizedBox(width: 20),
+      ],
+    );
+  }
+
+  Widget _buildActionIcon(IconData icon, String label) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: Colors.white, size: 28),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
       ],
     );
   }
