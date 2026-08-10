@@ -3,6 +3,7 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
 import 'package:luffytv/features/details/presentation/anime_details_screen.dart';
+import 'package:luffytv/core/widgets/bouncing_button.dart';
 
 /// One card, one job: render an Anime as a poster. Used for both the
 /// hero carousel and horizontal rows — sizing is passed in, not
@@ -29,7 +30,7 @@ class PosterCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final gradient = AppColors.cardGradients[anime.gradientIndex % AppColors.cardGradients.length];
 
-    return GestureDetector(
+    return BouncingButton(
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(builder: (context) => AnimeDetailsScreen(anime: anime)),
@@ -51,21 +52,22 @@ class PosterCard extends StatelessWidget {
           ),
           child: Stack(
             children: [
-              Positioned(
-                top: 12,
-                left: 12,
-                right: 12,
-                child: Text(
-                  anime.title,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    fontSize: width > 150 ? 15 : 12,
-                    fontWeight: FontWeight.w700,
+              if (anime.posterUrl == null)
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  right: 12,
+                  child: Text(
+                    anime.title,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      fontSize: width > 150 ? 15 : 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-              ),
               Positioned(
                 bottom: 0,
                 left: 0,

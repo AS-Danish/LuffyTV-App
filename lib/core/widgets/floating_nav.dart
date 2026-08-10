@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/features/home/providers/anime_providers.dart';
 
+import 'package:luffytv/core/widgets/bouncing_button.dart';
+
 class FloatingNav extends ConsumerWidget {
   const FloatingNav({super.key});
 
@@ -37,9 +39,12 @@ class FloatingNav extends ConsumerWidget {
               children: List.generate(_icons.length, (i) {
                 final icon = _icons[i];
                 final isSelected = i == navIndex;
-                return IconButton(
-                  onPressed: () => ref.read(selectedNavIndexProvider.notifier).setIndex(i),
-                  icon: Icon(icon, color: isSelected ? AppColors.accentStart : Colors.white70, size: 26),
+                return BouncingButton(
+                  onTap: () => ref.read(selectedNavIndexProvider.notifier).setIndex(i),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Icon(icon, color: isSelected ? AppColors.accentStart : Colors.white70, size: 26),
+                  ),
                 );
               }),
             ),

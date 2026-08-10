@@ -51,7 +51,7 @@ Anime _enrichAnime(Anime base) {
     title: base.title,
     genre: base.genre,
     year: base.year,
-    posterUrl: base.posterUrl,
+    posterUrl: 'https://picsum.photos/seed/${base.id}/400/600',
     gradientIndex: base.gradientIndex,
     description: 'When the world is threatened by an ancient evil, a young hero must rise and master their hidden potential. Joined by a colorful cast of misfits, they embark on an epic quest to save their realm. Gripping action and stunning animation.',
     maturityRating: 'TV-MA',

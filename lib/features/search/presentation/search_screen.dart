@@ -25,8 +25,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Reusing trendingNow as mock search results when searching
-    final mockResults = ref.watch(trendingNowProvider);
+    // Use allAnimeProvider for comprehensive search
+    final mockResults = ref.watch(allAnimeProvider);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -87,7 +87,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           Expanded(
                             child: ListView.builder(
                               padding: const EdgeInsets.only(bottom: 120),
-                              itemCount: animes.length,
+                              itemCount: animes.take(5).length,
                               itemBuilder: (context, index) {
                                 final anime = animes[index];
                                 return ListTile(
@@ -127,20 +127,80 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     loading: () => const Center(child: CircularProgressIndicator(color: AppColors.accentStart)),
                     error: (err, _) => Center(child: Text('Error loading results', style: AppTextStyles.body)),
                     data: (animes) {
+                      final searchTerm = _searchController.text.trim().toLowerCase();
+                      final filtered = animes.where((a) => a.title.toLowerCase().contains(searchTerm) || a.genre.toLowerCase().contains(searchTerm)).toList();
+
+                      if (filtered.isEmpty) {
+                        return Center(
+                          child: Text("No results found for '${_searchController.text}'", style: const TextStyle(color: Colors.white54, fontSize: 16)),
+                        );
+                      }
+
+                      if (filtered.length == 1) {
+                        return ListView.builder(
+                          padding: const EdgeInsets.only(bottom: 120, top: 16),
+                          itemCount: filtered.length,
+                          itemBuilder: (context, index) {
+                            final anime = filtered[index];
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                              leading: Container(
+                                width: 130,
+                                height: 75,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(4),
+                                  gradient: anime.posterUrl == null ? LinearGradient(
+                                    colors: AppColors.cardGradients[anime.gradientIndex % AppColors.cardGradients.length],
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  ) : null,
+                                  image: anime.posterUrl != null ? DecorationImage(image: NetworkImage(anime.posterUrl!), fit: BoxFit.cover) : null,
+                                ),
+                              ),
+                              title: Text(anime.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                              subtitle: Text('${anime.year} • ${anime.genre}', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                              trailing: const Icon(Icons.play_circle_outline, color: Colors.white, size: 32),
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(builder: (context) => AnimeDetailsScreen(anime: anime)),
+                                );
+                              },
+                            );
+                          },
+                        );
+                      }
+
+                      // Multiple matches: show Grid (like Netflix)
                       return GridView.builder(
-                        padding: const EdgeInsets.only(left: 20, right: 20, bottom: 120, top: 8),
+                        padding: const EdgeInsets.only(left: 12, right: 12, bottom: 120, top: 16),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          childAspectRatio: 0.7,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
+                          crossAxisCount: 3,
+                          childAspectRatio: 0.65,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
                         ),
-                        itemCount: animes.length,
+                        itemCount: filtered.length,
                         itemBuilder: (context, index) {
-                          return PosterCard(
-                            anime: animes[index],
-                            width: double.infinity,
-                            height: double.infinity,
+                          final anime = filtered[index];
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: PosterCard(
+                                  anime: anime,
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  radius: 8.0,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                anime.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                              ),
+                            ],
                           );
                         },
                       );

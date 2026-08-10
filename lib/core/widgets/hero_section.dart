@@ -5,6 +5,7 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/core/utils/responsive.dart';
 import 'package:luffytv/features/home/providers/anime_providers.dart';
+import 'package:luffytv/core/widgets/bouncing_button.dart';
 import 'poster_card.dart';
 
 class HeroSection extends ConsumerStatefulWidget {
@@ -102,21 +103,24 @@ class _ActionButtons extends StatelessWidget {
         const SizedBox(width: 20),
         _buildActionIcon(Icons.add, 'My List'),
         const Spacer(),
-        Container(
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          decoration: BoxDecoration(
-            gradient: AppColors.accentGradient,
-            borderRadius: BorderRadius.circular(4),
-            boxShadow: [BoxShadow(color: AppColors.accentStart.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 4))],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.play_arrow, color: Colors.white, size: 28),
-              const SizedBox(width: 4),
-              Text('Play', style: AppTextStyles.button.copyWith(color: Colors.white, fontSize: 16)),
-            ],
+        BouncingButton(
+          onTap: () {},
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            decoration: BoxDecoration(
+              gradient: AppColors.accentGradient,
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: [BoxShadow(color: AppColors.accentStart.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 4))],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.play_arrow, color: Colors.white, size: 28),
+                const SizedBox(width: 4),
+                Text('Play', style: AppTextStyles.button.copyWith(color: Colors.white, fontSize: 16)),
+              ],
+            ),
           ),
         ),
         const Spacer(),
@@ -127,13 +131,16 @@ class _ActionButtons extends StatelessWidget {
   }
 
   Widget _buildActionIcon(IconData icon, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: Colors.white, size: 28),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-      ],
+    return BouncingButton(
+      onTap: () {},
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 28),
+          const SizedBox(height: 4),
+          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        ],
+      ),
     );
   }
 }

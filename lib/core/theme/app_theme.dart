@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
@@ -12,9 +13,9 @@ class AppSpacing {
 
 class AppRadius {
   AppRadius._();
-  static const sm = 8.0;
-  static const md = 16.0;
-  static const lg = 28.0;
+  static const sm = 12.0;
+  static const md = 20.0;
+  static const lg = 32.0;
   static const full = 999.0;
 }
 
@@ -45,6 +46,15 @@ class AppTheme {
         surface: AppColors.surface,
       ),
       useMaterial3: true,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+        },
+      ),
     );
   }
 }

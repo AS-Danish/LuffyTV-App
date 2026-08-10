@@ -18,7 +18,10 @@ class MyApp extends StatelessWidget {
       title: 'Luffy TV',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      home: const MainNavScreen()
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        physics: const BouncingScrollPhysics(),
+      ),
+      home: const MainNavScreen(),
     );
   }
 }

@@ -34,19 +34,35 @@ class FavoritesScreen extends ConsumerWidget {
                       return Center(child: Text('No favorites yet', style: AppTextStyles.body));
                     }
                     return GridView.builder(
-                      padding: const EdgeInsets.only(left: 8, right: 8, bottom: 120),
+                      padding: const EdgeInsets.only(left: 12, right: 12, bottom: 120),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 3,
-                        childAspectRatio: 0.7,
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
+                        childAspectRatio: 0.65,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
                       ),
                       itemCount: animes.length,
                       itemBuilder: (context, index) {
-                        return PosterCard(
-                          anime: animes[index],
-                          width: double.infinity,
-                          height: double.infinity,
+                        final anime = animes[index];
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: PosterCard(
+                                anime: anime,
+                                width: double.infinity,
+                                height: double.infinity,
+                                radius: 8.0,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              anime.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ],
                         );
                       },
                     );

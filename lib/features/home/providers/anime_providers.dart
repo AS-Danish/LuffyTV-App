@@ -25,6 +25,18 @@ final newEpisodesProvider = FutureProvider<List<Anime>>((ref) {
   return ref.watch(animeRepositoryProvider).fetchNewEpisodes();
 });
 
+final allAnimeProvider = FutureProvider<List<Anime>>((ref) async {
+  final repo = ref.watch(animeRepositoryProvider);
+  final featured = await repo.fetchFeatured();
+  final editors = await repo.fetchEditorsPicks();
+  final trending = await repo.fetchTrendingNow();
+  final newEps = await repo.fetchNewEpisodes();
+  
+  final all = [featured, ...editors, ...trending, ...newEps];
+  final map = {for (var a in all) a.id: a}; // deduplicate
+  return map.values.toList();
+});
+
 /// Simple UI-only state — which category tab and nav item are selected.
 /// StateProvider is the right tool for trivial state like this; no
 /// need for a full StateNotifier/Notifier class for a single int.

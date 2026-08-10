@@ -7,7 +7,6 @@ import 'package:luffytv/core/widgets/top_bar.dart';
 import 'package:luffytv/core/widgets/category_tabs.dart';
 import 'package:luffytv/core/widgets/hero_section.dart';
 import 'package:luffytv/core/widgets/section_row.dart';
-import 'package:luffytv/core/widgets/section_row.dart';
 
 /// A senior-dev home screen reads like a table of contents — each
 /// section is a named widget, and there's no inline layout logic here

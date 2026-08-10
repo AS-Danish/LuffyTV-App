@@ -3,6 +3,7 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
 import 'package:luffytv/features/home/data/models/season.dart';
 import 'package:luffytv/features/home/data/models/episode.dart';
+import 'package:luffytv/core/widgets/bouncing_button.dart';
 
 class AnimeDetailsScreen extends StatefulWidget {
   final Anime anime;
@@ -105,43 +106,50 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> {
                   const SizedBox(height: 16),
                   
                   // Play button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: AppColors.accentGradient,
-                        borderRadius: BorderRadius.circular(4),
-                        boxShadow: [BoxShadow(color: AppColors.accentStart.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 4))],
-                      ),
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                  BouncingButton(
+                    onTap: () {},
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: AppColors.accentGradient,
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: [BoxShadow(color: AppColors.accentStart.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 4))],
                         ),
-                        onPressed: () {},
-                        icon: const Icon(Icons.play_arrow, size: 28),
-                        label: const Text('Play', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.play_arrow, size: 28, color: Colors.white),
+                            const SizedBox(width: 8),
+                            const Text('Play', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 12),
                   
                   // Download button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.15),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                  BouncingButton(
+                    onTap: () {},
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.download, size: 24, color: Colors.white),
+                            const SizedBox(width: 8),
+                            const Text('Download', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                          ],
+                        ),
                       ),
-                      onPressed: () {},
-                      icon: const Icon(Icons.download),
-                      label: const Text('Download', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -213,64 +221,70 @@ class _AnimeDetailsScreenState extends State<AnimeDetailsScreen> {
   }
 
   Widget _buildActionIcon(IconData icon, String label) {
-    return Column(
-      children: [
-        Icon(icon, color: Colors.white, size: 28),
-        const SizedBox(height: 8),
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-      ],
+    return BouncingButton(
+      onTap: () {},
+      child: Column(
+        children: [
+          Icon(icon, color: Colors.white, size: 28),
+          const SizedBox(height: 8),
+          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        ],
+      ),
     );
   }
 
   Widget _buildEpisodeRow(Episode ep) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Thumbnail
-              Container(
-                width: 130,
-                height: 75,
-                decoration: BoxDecoration(
-                  color: Colors.white12,
-                  borderRadius: BorderRadius.circular(4),
+    return BouncingButton(
+      onTap: () {},
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Thumbnail
+                Container(
+                  width: 130,
+                  height: 75,
+                  decoration: BoxDecoration(
+                    color: Colors.white12,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.play_circle_outline, color: Colors.white, size: 32),
+                  ),
                 ),
-                child: const Center(
-                  child: Icon(Icons.play_circle_outline, color: Colors.white, size: 32),
+                const SizedBox(width: 12),
+                // Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${ep.episodeNumber}. ${ep.title}',
+                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 4),
+                      Text('${ep.durationMinutes}m', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              // Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${ep.episodeNumber}. ${ep.title}',
-                      style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
-                    ),
-                    const SizedBox(height: 4),
-                    Text('${ep.durationMinutes}m', style: const TextStyle(color: Colors.white54, fontSize: 13)),
-                  ],
-                ),
-              ),
-              // Download icon
-              IconButton(
-                icon: const Icon(Icons.download_for_offline_outlined, color: Colors.white54),
-                onPressed: () {},
-              )
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            ep.description,
-            style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-          ),
-        ],
+                // Download icon
+                IconButton(
+                  icon: const Icon(Icons.download_for_offline_outlined, color: Colors.white54),
+                  onPressed: () {},
+                )
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              ep.description,
+              style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+            ),
+          ],
+        ),
       ),
     );
   }
