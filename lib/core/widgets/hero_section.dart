@@ -6,6 +6,8 @@ import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/core/utils/responsive.dart';
 import 'package:luffytv/features/home/providers/anime_providers.dart';
 import 'package:luffytv/core/widgets/bouncing_button.dart';
+import '../../features/details/presentation/anime_details_screen.dart';
+import '../../features/home/data/models/anime.dart';
 import 'poster_card.dart';
 
 class HeroSection extends ConsumerStatefulWidget {
@@ -69,7 +71,7 @@ class _HeroSectionState extends ConsumerState<HeroSection> {
             const SizedBox(height: AppSpacing.xs),
             Text('${currentAnime.year}  •  ${currentAnime.genre}', style: AppTextStyles.body),
             const SizedBox(height: AppSpacing.md),
-            _ActionButtons(),
+            _ActionButtons(currentAnime: currentAnime),
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -95,13 +97,16 @@ class _HeroSectionState extends ConsumerState<HeroSection> {
 }
 
 class _ActionButtons extends StatelessWidget {
+  final Anime currentAnime;
+  const _ActionButtons({required this.currentAnime});
+
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const SizedBox(width: 20),
-        _buildActionIcon(Icons.add, 'My List'),
+        _buildActionIcon(Icons.add, 'My List', onTap: () {}),
         const Spacer(),
         BouncingButton(
           onTap: () {},
@@ -124,15 +129,17 @@ class _ActionButtons extends StatelessWidget {
           ),
         ),
         const Spacer(),
-        _buildActionIcon(Icons.info_outline, 'Info'),
+        _buildActionIcon(Icons.info_outline, 'Info', onTap: () {
+          Navigator.of(context).push(MaterialPageRoute(builder: (_) => AnimeDetailsScreen(anime: currentAnime)));
+        }),
         const SizedBox(width: 20),
       ],
     );
   }
 
-  Widget _buildActionIcon(IconData icon, String label) {
+  Widget _buildActionIcon(IconData icon, String label, {required VoidCallback onTap}) {
     return BouncingButton(
-      onTap: () {},
+      onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

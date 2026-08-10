@@ -3,12 +3,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/features/home/providers/anime_providers.dart';
+import 'package:luffytv/features/home/data/models/anime.dart';
 
-class DownloadsScreen extends ConsumerWidget {
+import 'package:luffytv/features/profile/presentation/downloaded_episodes_screen.dart';
+import 'package:luffytv/core/widgets/bouncing_button.dart';
+
+class DownloadsScreen extends ConsumerStatefulWidget {
   const DownloadsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DownloadsScreen> createState() => _DownloadsScreenState();
+}
+
+class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
+  List<Anime>? _localAnimes;
+
+  @override
+  Widget build(BuildContext context) {
     // Reusing newEpisodes as mock downloaded data
     final downloads = ref.watch(newEpisodesProvider);
 
@@ -29,7 +40,9 @@ class DownloadsScreen extends ConsumerWidget {
           loading: () => const Center(child: CircularProgressIndicator(color: AppColors.accentStart)),
           error: (err, _) => Center(child: Text('Error loading downloads', style: AppTextStyles.body)),
           data: (animes) {
-            if (animes.isEmpty) {
+            _localAnimes ??= List.from(animes);
+
+            if (_localAnimes!.isEmpty) {
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -54,38 +67,58 @@ class DownloadsScreen extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 24),
-                ...animes.map((anime) {
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 130,
-                          height: 75,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(4),
-                            gradient: anime.posterUrl == null ? LinearGradient(
-                              colors: AppColors.cardGradients[anime.gradientIndex % AppColors.cardGradients.length],
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                            ) : null,
-                            image: anime.posterUrl != null ? DecorationImage(image: NetworkImage(anime.posterUrl!), fit: BoxFit.cover) : null,
+                ..._localAnimes!.map((anime) {
+                  return BouncingButton(
+                    onTap: () {
+                      Navigator.of(context).push(MaterialPageRoute(builder: (_) => DownloadedEpisodesScreen(anime: anime)));
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 130,
+                            height: 75,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(4),
+                              gradient: anime.posterUrl == null ? LinearGradient(
+                                colors: AppColors.cardGradients[anime.gradientIndex % AppColors.cardGradients.length],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                              ) : null,
+                              image: anime.posterUrl != null ? DecorationImage(image: NetworkImage(anime.posterUrl!), fit: BoxFit.cover) : null,
+                            ),
+                            child: const Center(child: Icon(Icons.play_circle_outline, color: Colors.white, size: 32)),
                           ),
-                          child: const Center(child: Icon(Icons.play_circle_outline, color: Colors.white, size: 32)),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(anime.title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 4),
-                              Text('12 Episodes • 2.4 GB', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
-                            ],
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(anime.title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 4),
+                                Text('${anime.seasons.expand((s) => s.episodes).length} Episodes • ${(anime.seasons.expand((s) => s.episodes).length * 240)} MB', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
+                              ],
+                            ),
                           ),
-                        ),
-                        const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
-                      ],
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.white54),
+                            onPressed: () {
+                              setState(() {
+                                _localAnimes!.remove(anime);
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('${anime.title} removed from downloads'),
+                                  backgroundColor: AppColors.surface,
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            },
+                          ),
+                          const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
+                        ],
+                      ),
                     ),
                   );
                 }),

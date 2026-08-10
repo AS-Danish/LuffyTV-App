@@ -54,4 +54,4 @@ class SelectedNavIndexNotifier extends Notifier<int> {
 }
 final selectedNavIndexProvider = NotifierProvider<SelectedNavIndexNotifier, int>(SelectedNavIndexNotifier.new);
 
-const categories = ['Anime', 'Movies', 'Seasonal', 'Music', 'Manga'];
+const categories = ['All', 'Shounen', 'Isekai', 'Romance', 'Slice of Life', 'Mecha'];

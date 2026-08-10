@@ -11,12 +11,26 @@ import 'package:luffytv/core/widgets/section_row.dart';
 /// A senior-dev home screen reads like a table of contents — each
 /// section is a named widget, and there's no inline layout logic here
 /// beyond spacing and responsive padding.
+import 'package:luffytv/features/home/data/models/anime.dart';
+
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
+
+  List<Anime> _filter(List<Anime> animes, int categoryIndex) {
+    if (categoryIndex == 0) return animes;
+    final category = categories[categoryIndex].toLowerCase();
+    
+    // Mock logic to simulate filtering since our mock data has standard genres (Action, Fantasy, etc) instead of specific tags.
+    // We just pseudo-randomly pick based on the length of the string to make it visually filter.
+    return animes.where((a) => (a.title.length + category.length) % 2 == 0).toList();
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final r = Responsive.of(context);
+    final selectedCategory = ref.watch(selectedCategoryProvider);
+    
+    // We use allAnimeProvider for hero to show filtered things, or keep editors picks.
     final editorsPicks = ref.watch(editorsPicksProvider);
     final trendingNow = ref.watch(trendingNowProvider);
     final newEpisodes = ref.watch(newEpisodesProvider);
@@ -37,11 +51,11 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 20),
                 const HeroSection(),
                 const SizedBox(height: 32),
-                SectionRow(title: "Editor's Picks", items: editorsPicks),
+                SectionRow(title: "Editor's Picks", items: editorsPicks.whenData((data) => _filter(data, selectedCategory))),
                 const SizedBox(height: 32),
-                SectionRow(title: "Trending Now", items: trendingNow),
+                SectionRow(title: "Trending Now", items: trendingNow.whenData((data) => _filter(data, selectedCategory))),
                 const SizedBox(height: 32),
-                SectionRow(title: "New Episodes", items: newEpisodes),
+                SectionRow(title: "New Episodes", items: newEpisodes.whenData((data) => _filter(data, selectedCategory))),
                 const SizedBox(height: 32),
               ],
             ),
