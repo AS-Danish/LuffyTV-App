@@ -162,58 +162,6 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildProfileAvatar(String name, String url, {bool isSelected = false}) {
-    return BouncingButton(
-      onTap: () {},
-      child: Column(
-        children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: isSelected ? Border.all(color: AppColors.accentStart, width: 3) : null,
-              image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            name,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.white54,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              fontSize: 12,
-            ),
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAddProfile() {
-    return BouncingButton(
-      onTap: () {},
-      child: Column(
-        children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white30, width: 2),
-            ),
-            child: const Icon(Icons.add, color: Colors.white54, size: 32),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Add Profile',
-            style: TextStyle(color: Colors.white54, fontSize: 12),
-          )
-        ],
-      ),
-    );
-  }
-
   Widget _buildMenuTile({
     required BuildContext context,
     required IconData icon,
