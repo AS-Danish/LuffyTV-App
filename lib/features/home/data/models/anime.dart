@@ -35,14 +35,28 @@ class Anime {
   });
 
   factory Anime.fromJson(Map<String, dynamic> json) {
+    // Determine the year from date if available
+    int parsedYear = 0;
+    if (json['year'] != null) {
+      parsedYear = json['year'] as int;
+    } else if (json['date'] != null) {
+      final dateStr = json['date'] as String;
+      // Extract 4 digit year from something like "Jul 25, 2026 to ?" or "2026-08-05"
+      final yearRegex = RegExp(r'\b(19|20)\d{2}\b');
+      final match = yearRegex.firstMatch(dateStr);
+      if (match != null) {
+        parsedYear = int.parse(match.group(0)!);
+      }
+    }
+
     return Anime(
-      id: json['id'].toString(),
+      id: (json['slug'] ?? json['id'] ?? '').toString(),
       title: json['title'] as String? ?? 'Untitled',
       genre: json['genre'] as String? ?? '',
-      year: json['year'] as int? ?? 0,
-      posterUrl: json['poster'] as String? ?? json['image'] as String?,
-      description: json['description'] as String? ?? '',
-      maturityRating: json['maturityRating'] as String? ?? 'TV-14',
+      year: parsedYear,
+      posterUrl: json['image'] as String? ?? json['poster'] as String?,
+      description: json['synopsis'] as String? ?? json['description'] as String? ?? '',
+      maturityRating: json['rating'] as String? ?? json['maturityRating'] as String? ?? 'TV-14',
       matchPercentage: json['matchPercentage'] as int? ?? 90,
       cast: (json['cast'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       creator: json['creator'] as String? ?? 'Unknown',

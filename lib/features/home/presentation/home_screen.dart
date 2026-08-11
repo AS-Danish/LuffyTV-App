@@ -34,6 +34,8 @@ class HomeScreen extends ConsumerWidget {
     final editorsPicks = ref.watch(editorsPicksProvider);
     final trendingNow = ref.watch(trendingNowProvider);
     final newEpisodes = ref.watch(newEpisodesProvider);
+    final recentlyCompleted = ref.watch(recentlyCompletedProvider);
+    final topMonth = ref.watch(topMonthProvider);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -56,6 +58,10 @@ class HomeScreen extends ConsumerWidget {
                 SectionRow(title: "Trending Now", items: trendingNow.whenData((data) => _filter(data, selectedCategory))),
                 const SizedBox(height: 32),
                 SectionRow(title: "New Episodes", items: newEpisodes.whenData((data) => _filter(data, selectedCategory))),
+                const SizedBox(height: 32),
+                SectionRow(title: "Recently Completed", items: recentlyCompleted.whenData((data) => _filter(data, selectedCategory))),
+                const SizedBox(height: 32),
+                SectionRow(title: "Top This Month", items: topMonth.whenData((data) => _filter(data, selectedCategory))),
                 const SizedBox(height: 32),
               ],
             ),

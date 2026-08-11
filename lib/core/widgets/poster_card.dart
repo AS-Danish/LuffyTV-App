@@ -47,7 +47,11 @@ class PosterCard extends StatelessWidget {
             border: highlighted ? Border.all(color: AppColors.accentStart.withValues(alpha: 0.6), width: 1.5) : null,
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 20, offset: const Offset(0, 10))],
             image: anime.posterUrl != null
-                ? DecorationImage(image: NetworkImage(anime.posterUrl!), fit: BoxFit.cover)
+                ? DecorationImage(
+                    image: NetworkImage(anime.posterUrl!), 
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
+                  )
                 : null,
           ),
           child: Stack(
@@ -72,14 +76,28 @@ class PosterCard extends StatelessWidget {
                 bottom: 0,
                 left: 0,
                 right: 0,
-                height: height * 0.35,
                 child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.vertical(bottom: Radius.circular(radius)),
                     gradient: LinearGradient(
-                      colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
+                      colors: [Colors.transparent, Colors.black.withValues(alpha: 0.9)],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
+                    ),
+                  ),
+                  child: Text(
+                    anime.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: width > 150 ? 14 : 11,
+                      fontWeight: FontWeight.w600,
+                      shadows: const [
+                        Shadow(color: Colors.black, blurRadius: 2, offset: Offset(1, 1))
+                      ],
                     ),
                   ),
                 ),

@@ -11,6 +11,8 @@ abstract class AnimeRepository {
   Future<List<Anime>> fetchEditorsPicks();
   Future<List<Anime>> fetchTrendingNow();
   Future<List<Anime>> fetchNewEpisodes();
+  Future<List<Anime>> fetchRecentlyCompleted();
+  Future<List<Anime>> fetchTopMonth();
 }
 
 /// Helper to generate mock seasons
@@ -103,5 +105,17 @@ class MockAnimeRepository implements AnimeRepository {
       _enrichAnime(const Anime(id: 'n3', title: 'Kaiju No. 8', genre: 'Action', year: 2024, gradientIndex: 3)),
       _enrichAnime(const Anime(id: 'n4', title: 'My Hero Academia', genre: 'Action', year: 2024, gradientIndex: 4)),
     ];
+  }
+
+  @override
+  Future<List<Anime>> fetchRecentlyCompleted() async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return [];
+  }
+
+  @override
+  Future<List<Anime>> fetchTopMonth() async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return [];
   }
 }
