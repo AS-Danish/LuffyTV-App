@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luffytv/core/theme/app_colors.dart';
-import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/features/downloads/providers/download_providers.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
 import 'package:luffytv/features/profile/presentation/downloaded_episodes_screen.dart';

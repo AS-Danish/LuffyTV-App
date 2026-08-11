@@ -4,6 +4,7 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/widgets/bouncing_button.dart';
 import 'package:luffytv/features/downloads/providers/download_providers.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
+import 'package:luffytv/features/player/presentation/video_player_screen.dart';
 
 class DownloadedEpisodesScreen extends ConsumerWidget {
   final String animeSlug;
@@ -54,7 +55,16 @@ class DownloadedEpisodesScreen extends ConsumerWidget {
                   final episode = item.episode;
                   
                   return BouncingButton(
-                    onTap: () {}, // Play downloaded video
+                    onTap: () {
+                      Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => VideoPlayerScreen(
+                          animeTitle: animeTitle,
+                          animeSlug: animeSlug,
+                          episodeNumber: episode.episodeNumber,
+                          isLocal: true,
+                        ),
+                      ));
+                    },
                     child: Container(
                       margin: const EdgeInsets.only(bottom: 24),
                       child: Row(

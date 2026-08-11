@@ -6,6 +6,7 @@ import 'package:luffytv/features/home/data/models/anime.dart';
 import 'package:luffytv/features/details/providers/details_providers.dart';
 import 'package:luffytv/features/downloads/providers/download_providers.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
+import 'package:luffytv/features/player/presentation/video_player_screen.dart';
 
 class AnimeDetailsScreen extends ConsumerStatefulWidget {
   final Anime anime;
@@ -32,12 +33,15 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
           SliverAppBar(
             expandedHeight: 350.0,
             pinned: true,
+            centerTitle: true,
             backgroundColor: AppColors.bg,
             flexibleSpace: FlexibleSpaceBar(
+              centerTitle: true,
               title: Text(
                 widget.anime.title,
                 style: AppTextStyles.heroTitle.copyWith(fontSize: 18),
-                maxLines: 1,
+                textAlign: TextAlign.center,
+                maxLines: 3,
                 overflow: TextOverflow.ellipsis,
               ),
               background: Stack(
@@ -105,7 +109,15 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                         children: [
                           Expanded(
                             child: ElevatedButton.icon(
-                              onPressed: () {},
+                              onPressed: () {
+                                Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (_) => VideoPlayerScreen(
+                                    animeTitle: widget.anime.title,
+                                    animeSlug: widget.anime.id,
+                                    episodeNumber: 1, // Default to episode 1 for main play button
+                                  ),
+                                ));
+                              },
                               icon: const Icon(Icons.play_arrow, color: Colors.white),
                               label: Text('Play', style: AppTextStyles.button),
                               style: ElevatedButton.styleFrom(
@@ -289,7 +301,15 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                               );
                             },
                           ),
-                          onTap: () {},
+                          onTap: () {
+                            Navigator.of(context).push(MaterialPageRoute(
+                              builder: (_) => VideoPlayerScreen(
+                                animeTitle: widget.anime.title,
+                                animeSlug: widget.anime.id,
+                                episodeNumber: ep.episodeNumber,
+                              ),
+                            ));
+                          },
                         );
                       },
                       childCount: chunkEpisodes.length,

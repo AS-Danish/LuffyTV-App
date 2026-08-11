@@ -1,5 +1,5 @@
 class ApiConstants {
-  // Use 10.0.2.2 for Android Emulator to connect to localhost on the host machine.
-  // Change to 'http://localhost:3000' for Windows, Web, or iOS simulator.
-  static const String baseUrl = 'http://10.0.2.2:3000';
+  // Use 192.168.1.4 to allow physical Android devices on the same WiFi network
+  // to connect to the backend running on this computer.
+  static const String baseUrl = 'http://192.168.1.4:3000';
 }

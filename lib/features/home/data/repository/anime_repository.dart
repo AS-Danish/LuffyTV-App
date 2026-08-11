@@ -2,6 +2,7 @@ import '../models/anime.dart';
 import '../models/season.dart';
 import '../models/episode.dart';
 import 'package:luffytv/features/details/data/models/anime_detail.dart';
+import 'package:luffytv/features/home/data/models/watch_data.dart';
 
 /// Abstract contract. Screens and providers only ever depend on this —
 /// never on a concrete implementation. This is the one seam that lets
@@ -17,6 +18,7 @@ abstract class AnimeRepository {
   Future<AnimeDetail> fetchAnimeDetails(String slug);
   Future<List<Episode>> fetchAnimeEpisodes(String slug);
   Future<List<Anime>> searchAnime(String keyword);
+  Future<WatchData> fetchWatchData(String slug, int episodeNumber);
 }
 
 /// Helper to generate mock seasons
@@ -155,5 +157,22 @@ class MockAnimeRepository implements AnimeRepository {
   Future<List<Anime>> searchAnime(String keyword) async {
     await Future.delayed(const Duration(milliseconds: 300));
     return [];
+  }
+
+  @override
+  Future<WatchData> fetchWatchData(String slug, int episodeNumber) async {
+    await Future.delayed(const Duration(milliseconds: 600));
+    return const WatchData(
+      servers: [VideoServer(id: '1', name: 'Mock Server', type: 'sub')],
+      sources: [
+        VideoSource(
+          server: 'Mock Server',
+          type: 'sub',
+          url: 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          m3u8: 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          tracks: [],
+        ),
+      ],
+    );
   }
 }

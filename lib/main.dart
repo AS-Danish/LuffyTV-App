@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/main_nav_screen.dart';
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
   /*await Supabase.initialize(url: 'url');*/
   runApp(const ProviderScope(child: MyApp()));
 }

@@ -5,13 +5,29 @@ import 'package:luffytv/features/home/data/models/anime.dart';
 import 'package:luffytv/features/home/data/models/episode.dart';
 import 'package:luffytv/features/home/data/repository/anime_repository.dart';
 import 'package:luffytv/features/details/data/models/anime_detail.dart';
+import 'package:luffytv/features/home/data/models/watch_data.dart';
 
 class ApiAnimeRepository implements AnimeRepository {
   final http.Client client;
 
   ApiAnimeRepository({required this.client});
 
-  Future<Map<String, dynamic>> _fetchHomeData() async {
+  Future<Map<String, dynamic>>? _homeDataFuture;
+
+  Future<Map<String, dynamic>> _fetchHomeData() {
+    if (_homeDataFuture != null) {
+      return _homeDataFuture!;
+    }
+    
+    _homeDataFuture = _doFetchHomeData().catchError((e) {
+      _homeDataFuture = null;
+      throw e;
+    });
+    
+    return _homeDataFuture!;
+  }
+
+  Future<Map<String, dynamic>> _doFetchHomeData() async {
     final response = await client.get(Uri.parse('${ApiConstants.baseUrl}/api/home'));
     if (response.statusCode == 200) {
       final jsonResponse = jsonDecode(response.body);
@@ -107,5 +123,18 @@ class ApiAnimeRepository implements AnimeRepository {
       return [];
     }
     throw Exception('Failed to search anime');
+  }
+
+  @override
+  Future<WatchData> fetchWatchData(String slug, int episodeNumber) async {
+    final response = await client.get(Uri.parse('${ApiConstants.baseUrl}/api/watch/$slug?ep=$episodeNumber&stream=false'));
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      if (json['ok'] == true && json['data'] != null) {
+        return WatchData.fromJson(json['data']);
+      }
+      throw Exception('API returned ok: false');
+    }
+    throw Exception('Failed to load watch data');
   }
 }
