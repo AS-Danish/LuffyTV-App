@@ -303,35 +303,39 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
             ),
           ],
           primaryButtonBar: [
-            StatefulBuilder(
-              builder: (context, setSliderState) {
-                return Padding(
-                  padding: const EdgeInsets.only(left: 32.0),
-                  child: SizedBox(
-                    height: 150,
-                    child: RotatedBox(
-                      quarterTurns: 3,
-                      child: Slider(
-                        value: _brightness,
-                        min: 0.0,
-                        max: 1.0,
-                        activeColor: AppColors.accentStart,
-                        inactiveColor: Colors.white24,
-                        onChanged: (value) async {
-                          setSliderState(() {
-                            _brightness = value;
-                          });
-                          try {
-                            await ScreenBrightness().setScreenBrightness(value);
-                          } catch (_) {}
-                        },
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: StatefulBuilder(
+                  builder: (context, setSliderState) {
+                    return Padding(
+                      padding: const EdgeInsets.only(left: 32.0),
+                      child: SizedBox(
+                        height: 150,
+                        child: RotatedBox(
+                          quarterTurns: 3,
+                          child: Slider(
+                            value: _brightness,
+                            min: 0.0,
+                            max: 1.0,
+                            activeColor: AppColors.accentStart,
+                            inactiveColor: Colors.white24,
+                            onChanged: (value) async {
+                              setSliderState(() {
+                                _brightness = value;
+                              });
+                              try {
+                                await ScreenBrightness().setScreenBrightness(value);
+                              } catch (_) {}
+                            },
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                );
-              }
+                    );
+                  }
+                ),
+              ),
             ),
-            const Spacer(),
             MaterialCustomButton(
               iconSize: 48,
               icon: const Icon(Icons.replay_10, color: Colors.white),
@@ -399,7 +403,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                 subtitleViewConfiguration: const SubtitleViewConfiguration(
                   style: TextStyle(
                     height: 1.4,
-                    fontSize: 28.0,
+                    fontSize: 36.0,
                     letterSpacing: 0.0,
                     wordSpacing: 0.0,
                     color: Colors.white,
