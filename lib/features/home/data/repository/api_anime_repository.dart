@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:luffytv/core/utils/api_constants.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
+import 'package:luffytv/features/home/data/models/episode.dart';
 import 'package:luffytv/features/home/data/repository/anime_repository.dart';
+import 'package:luffytv/features/details/data/models/anime_detail.dart';
 
 class ApiAnimeRepository implements AnimeRepository {
   final http.Client client;
@@ -63,5 +65,47 @@ class ApiAnimeRepository implements AnimeRepository {
     final data = await _fetchHomeData();
     final topMonth = data['topMonth'] as List<dynamic>? ?? [];
     return topMonth.map((e) => Anime.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  @override
+  Future<AnimeDetail> fetchAnimeDetails(String slug) async {
+    final response = await client.get(Uri.parse('${ApiConstants.baseUrl}/api/anime/$slug'));
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      if (json['ok'] == true && json['data'] != null) {
+        return AnimeDetail.fromJson(json['data']);
+      }
+      throw Exception('API returned ok: false');
+    }
+    throw Exception('Failed to load anime details');
+  }
+
+  @override
+  Future<List<Episode>> fetchAnimeEpisodes(String slug) async {
+    final response = await client.get(Uri.parse('${ApiConstants.baseUrl}/api/anime/$slug/episodes'));
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      if (json['ok'] == true && json['data'] != null && json['data']['episodes'] != null) {
+        final List<dynamic> epsList = json['data']['episodes'];
+        return epsList.map((e) => Episode.fromJson(e)).toList();
+      }
+      return [];
+    }
+    throw Exception('Failed to load episodes');
+  }
+
+  @override
+  Future<List<Anime>> searchAnime(String keyword) async {
+    final encodedKeyword = Uri.encodeComponent(keyword);
+    final response = await client.get(Uri.parse('${ApiConstants.baseUrl}/api/search?keyword=$encodedKeyword'));
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      if (json['ok'] == true && json['data'] != null && json['data']['results'] != null) {
+        final List<dynamic> resultsList = json['data']['results'];
+        return resultsList.map((e) => Anime.fromJson(e)).toList();
+      }
+      return [];
+    }
+    throw Exception('Failed to search anime');
   }
 }

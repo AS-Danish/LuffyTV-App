@@ -1,31 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luffytv/core/theme/app_colors.dart';
-import 'package:luffytv/features/home/data/models/anime.dart';
 import 'package:luffytv/core/widgets/bouncing_button.dart';
+import 'package:luffytv/features/downloads/providers/download_providers.dart';
+import 'package:luffytv/features/downloads/data/models/download_item.dart';
 
-import 'package:luffytv/features/home/data/models/episode.dart';
+class DownloadedEpisodesScreen extends ConsumerWidget {
+  final String animeSlug;
+  final String animeTitle;
+  final String? posterUrl;
 
-class DownloadedEpisodesScreen extends StatefulWidget {
-  final Anime anime;
-
-  const DownloadedEpisodesScreen({super.key, required this.anime});
-
-  @override
-  State<DownloadedEpisodesScreen> createState() => _DownloadedEpisodesScreenState();
-}
-
-class _DownloadedEpisodesScreenState extends State<DownloadedEpisodesScreen> {
-  late List<Episode> _localEpisodes;
-
-  @override
-  void initState() {
-    super.initState();
-    // Collect all episodes from all seasons to flatten them
-    _localEpisodes = widget.anime.seasons.expand((s) => s.episodes).toList();
-  }
+  const DownloadedEpisodesScreen({
+    super.key, 
+    required this.animeSlug,
+    required this.animeTitle,
+    this.posterUrl,
+  });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final downloads = ref.watch(downloadItemsProvider)
+        .where((d) => d.animeSlug == animeSlug && d.state == DownloadState.completed)
+        .toList();
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
@@ -35,11 +31,11 @@ class _DownloadedEpisodesScreenState extends State<DownloadedEpisodesScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(widget.anime.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(animeTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       body: Container(
         decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
-        child: _localEpisodes.isEmpty
+        child: downloads.isEmpty
             ? Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -52,9 +48,11 @@ class _DownloadedEpisodesScreenState extends State<DownloadedEpisodesScreen> {
               )
             : ListView.builder(
                 padding: const EdgeInsets.all(20),
-                itemCount: _localEpisodes.length,
+                itemCount: downloads.length,
                 itemBuilder: (context, index) {
-                  final episode = _localEpisodes[index];
+                  final item = downloads[index];
+                  final episode = item.episode;
+                  
                   return BouncingButton(
                     onTap: () {}, // Play downloaded video
                     child: Container(
@@ -71,26 +69,13 @@ class _DownloadedEpisodesScreenState extends State<DownloadedEpisodesScreen> {
                                 height: 80,
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(8),
-                                  image: widget.anime.posterUrl != null 
-                                    ? DecorationImage(image: NetworkImage(widget.anime.posterUrl!), fit: BoxFit.cover)
+                                  image: posterUrl != null 
+                                    ? DecorationImage(image: NetworkImage(posterUrl!), fit: BoxFit.cover)
                                     : null,
                                   color: Colors.grey[900],
                                 ),
                               ),
                               const Icon(Icons.play_circle_outline, color: Colors.white, size: 36),
-                              // Progress bar
-                              if (episode.progress > 0)
-                                Positioned(
-                                  bottom: 0,
-                                  left: 0,
-                                  right: 0,
-                                  child: LinearProgressIndicator(
-                                    value: episode.progress,
-                                    backgroundColor: Colors.white24,
-                                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accentStart),
-                                    minHeight: 4,
-                                  ),
-                                ),
                             ],
                           ),
                           const SizedBox(width: 16),
@@ -101,7 +86,7 @@ class _DownloadedEpisodesScreenState extends State<DownloadedEpisodesScreen> {
                               children: [
                                 Text(episode.title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                                 const SizedBox(height: 4),
-                                Text('${episode.durationMinutes}m • ${(episode.progress * episode.durationMinutes).toInt()}m watched', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                                Text('${episode.durationMinutes}m', style: const TextStyle(color: Colors.white54, fontSize: 13)),
                                 const SizedBox(height: 8),
                                 Text(
                                   episode.description,
@@ -116,9 +101,7 @@ class _DownloadedEpisodesScreenState extends State<DownloadedEpisodesScreen> {
                           IconButton(
                             icon: const Icon(Icons.delete_outline, color: Colors.white54),
                             onPressed: () {
-                              setState(() {
-                                _localEpisodes.removeAt(index);
-                              });
+                              ref.read(downloadItemsProvider.notifier).removeDownload(item.id);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text('${episode.title} removed from downloads'),

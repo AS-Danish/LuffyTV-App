@@ -1,7 +1,7 @@
 import '../models/anime.dart';
-
 import '../models/season.dart';
 import '../models/episode.dart';
+import 'package:luffytv/features/details/data/models/anime_detail.dart';
 
 /// Abstract contract. Screens and providers only ever depend on this —
 /// never on a concrete implementation. This is the one seam that lets
@@ -13,6 +13,10 @@ abstract class AnimeRepository {
   Future<List<Anime>> fetchNewEpisodes();
   Future<List<Anime>> fetchRecentlyCompleted();
   Future<List<Anime>> fetchTopMonth();
+
+  Future<AnimeDetail> fetchAnimeDetails(String slug);
+  Future<List<Episode>> fetchAnimeEpisodes(String slug);
+  Future<List<Anime>> searchAnime(String keyword);
 }
 
 /// Helper to generate mock seasons
@@ -115,6 +119,40 @@ class MockAnimeRepository implements AnimeRepository {
 
   @override
   Future<List<Anime>> fetchTopMonth() async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return [];
+  }
+
+  @override
+  Future<AnimeDetail> fetchAnimeDetails(String slug) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return AnimeDetail(
+      id: slug,
+      title: 'Mock Anime',
+      posterUrl: '',
+      description: 'Mock description',
+      status: 'Unknown',
+      year: '2024',
+      rating: 'PG',
+      duration: '24m',
+      episodeCount: 12,
+      genres: [],
+      studios: [],
+      hasSub: true,
+      hasDub: false,
+    );
+  }
+
+  @override
+  Future<List<Episode>> fetchAnimeEpisodes(String slug) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return [
+      const Episode(id: '1', episodeNumber: 1, title: 'Episode 1', durationMinutes: 24, description: '', hasSub: true, hasDub: false),
+    ];
+  }
+
+  @override
+  Future<List<Anime>> searchAnime(String keyword) async {
     await Future.delayed(const Duration(milliseconds: 300));
     return [];
   }
