@@ -5,14 +5,26 @@ import '../data/models/anime.dart';
 import 'package:http/http.dart' as http;
 import '../data/repository/api_anime_repository.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:luffytv/core/services/cache_manager.dart';
+
 /// Swap MockAnimeRepository() for a real implementation here — this is
 /// the single line the rest of the app depends on.
 final animeRepositoryProvider = Provider<AnimeRepository>((ref) {
   final client = http.Client();
+  
+  CacheManager? cacheManager;
+  try {
+    cacheManager = CacheManager(supabase: Supabase.instance.client);
+  } catch (e) {
+    // Supabase not initialized, CacheManager will be null
+    print('Supabase not initialized, caching disabled.');
+  }
+
   // Remember to dispose the client if this provider is ever disposed, 
   // though typically this lives forever.
   ref.onDispose(() => client.close());
-  return ApiAnimeRepository(client: client);
+  return ApiAnimeRepository(client: client, cacheManager: cacheManager);
 });
 
 /// FutureProvider handles loading/error/data states automatically —

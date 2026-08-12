@@ -3,11 +3,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/main_nav_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  /*await Supabase.initialize(url: 'url');*/
+  
+  try {
+    await dotenv.load(fileName: ".env");
+    
+    await Supabase.initialize(
+      url: dotenv.env['SUPABASE_URL'] ?? '',
+      anonKey: dotenv.env['SUPABASE_ANNON_KEY'] ?? '',
+    );
+  } catch (e) {
+    print('Failed to initialize Supabase: $e');
+  }
+  
   runApp(const ProviderScope(child: MyApp()));
 }
 
