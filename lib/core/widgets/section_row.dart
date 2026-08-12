@@ -4,6 +4,7 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/core/utils/responsive.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
+import 'package:luffytv/features/home/presentation/see_all_screen.dart';
 import 'poster_card.dart';
 
 /// Generic — pass any AsyncValue<List<Anime>> provider result in.
@@ -27,7 +28,19 @@ class SectionRow extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(title, style: AppTextStyles.sectionTitle),
-            Text('See All', style: AppTextStyles.caption),
+            GestureDetector(
+              onTap: () {
+                final currentItems = items.value;
+                if (currentItems != null && currentItems.isNotEmpty) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => SeeAllScreen(title: title, animes: currentItems),
+                    ),
+                  );
+                }
+              },
+              child: Text('See All', style: AppTextStyles.caption.copyWith(color: AppColors.accentStart)),
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.sm + 6),

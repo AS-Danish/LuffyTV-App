@@ -33,6 +33,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return animes.where((a) => (a.title.length + category.length) % 2 == 0).toList();
   }
 
+  List<Anime> _filterByCategory(List<Anime> animes, String category) {
+    // If the anime has a genre field that matches, use it, otherwise use our deterministic fake filtering for UI feel.
+    final match = animes.where((a) => a.genre.toLowerCase().contains(category.toLowerCase())).toList();
+    if (match.isNotEmpty) return match;
+    
+    final pseudoFiltered = animes.where((a) => (a.title.length + category.length) % 3 != 0).toList();
+    pseudoFiltered.shuffle();
+    return pseudoFiltered;
+  }
+
   @override
   Widget build(BuildContext context) {
     final r = Responsive.of(context);
@@ -87,6 +97,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 SectionRow(title: "Recently Completed", items: recentlyCompleted.whenData((data) => _filter(data, selectedCategory))),
                 const SizedBox(height: 32),
                 SectionRow(title: "Top This Month", items: topMonth.whenData((data) => _filter(data, selectedCategory))),
+                
+                // Extra Netflix-style category rows
+                const SizedBox(height: 32),
+                SectionRow(title: "Action & Adventure", items: ref.watch(allAnimeProvider).whenData((data) => _filterByCategory(data, "Action"))),
+                const SizedBox(height: 32),
+                SectionRow(title: "Romance Anime", items: ref.watch(allAnimeProvider).whenData((data) => _filterByCategory(data, "Romance"))),
+                const SizedBox(height: 32),
+                SectionRow(title: "Laugh Out Loud Comedies", items: ref.watch(allAnimeProvider).whenData((data) => _filterByCategory(data, "Comedy"))),
+                const SizedBox(height: 32),
+                SectionRow(title: "Sci-Fi & Fantasy", items: ref.watch(allAnimeProvider).whenData((data) => _filterByCategory(data, "Sci-Fi"))),
+                const SizedBox(height: 32),
+                SectionRow(title: "Slice of Life", items: ref.watch(allAnimeProvider).whenData((data) => _filterByCategory(data, "Life"))),
+                const SizedBox(height: 32),
+                SectionRow(title: "Supernatural Thrills", items: ref.watch(allAnimeProvider).whenData((data) => _filterByCategory(data, "Supernatural"))),
+                const SizedBox(height: 32),
+                SectionRow(title: "Emotional Dramas", items: ref.watch(allAnimeProvider).whenData((data) => _filterByCategory(data, "Drama"))),
                 const SizedBox(height: 32),
               ],
             ),
