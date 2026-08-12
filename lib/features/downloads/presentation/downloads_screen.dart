@@ -4,6 +4,8 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/features/downloads/providers/download_providers.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
+import 'package:luffytv/features/home/data/models/anime.dart';
+import 'package:luffytv/features/player/presentation/video_player_screen.dart';
 
 class DownloadsScreen extends ConsumerWidget {
   const DownloadsScreen({super.key});
@@ -90,9 +92,22 @@ class DownloadsScreen extends ConsumerWidget {
                             : const Icon(Icons.close, color: AppColors.textSecondary),
                         onPressed: () {
                           if (item.state == DownloadState.completed) {
-                            // Play video
+                            Navigator.of(context).push(MaterialPageRoute(
+                              builder: (_) => VideoPlayerScreen(
+                                animeTitle: item.animeTitle,
+                                animeSlug: item.animeSlug,
+                                episodeNumber: item.episode.episodeNumber,
+                                isLocal: true,
+                                anime: Anime(
+                                  id: item.animeSlug,
+                                  title: item.animeTitle,
+                                  genre: '',
+                                  year: 0,
+                                  posterUrl: item.posterUrl,
+                                ),
+                              ),
+                            ));
                           } else {
-                            // Cancel or delete download
                             ref.read(downloadItemsProvider.notifier).removeDownload(item.id);
                           }
                         },

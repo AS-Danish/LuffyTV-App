@@ -5,6 +5,8 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/features/search/providers/search_providers.dart';
 import 'package:luffytv/core/widgets/poster_card.dart';
+import 'package:luffytv/core/services/local_db_service.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -31,6 +33,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       setState(() {
         _isSearching = query.isNotEmpty;
       });
+      if (query.trim().isNotEmpty) {
+        LocalDbService.saveSearchQuery(query.trim());
+      }
       ref.read(searchQueryProvider.notifier).state = query;
     });
   }
@@ -77,9 +82,53 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
               ),
               if (!_isSearching)
-                const Expanded(
-                  child: Center(
-                    child: Text('Type to search...', style: TextStyle(color: Colors.white54, fontSize: 16)),
+                Expanded(
+                  child: ValueListenableBuilder(
+                    valueListenable: Hive.box<List<String>>('recent_searches').listenable(),
+                    builder: (context, Box<List<String>> box, _) {
+                      final recentSearches = box.get('queries', defaultValue: <String>[])!;
+                      
+                      if (recentSearches.isEmpty) {
+                        return const Center(
+                          child: Text('Type to search...', style: TextStyle(color: Colors.white54, fontSize: 16)),
+                        );
+                      }
+                      
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Recent Searches', style: AppTextStyles.sectionTitle),
+                                GestureDetector(
+                                  onTap: LocalDbService.clearRecentSearches,
+                                  child: const Text('Clear', style: TextStyle(color: AppColors.accentStart, fontSize: 14)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: recentSearches.map((query) {
+                                return ActionChip(
+                                  label: Text(query, style: const TextStyle(color: Colors.white)),
+                                  backgroundColor: Colors.white.withValues(alpha: 0.1),
+                                  side: BorderSide.none,
+                                  onPressed: () {
+                                    _searchController.text = query;
+                                    _onSearchChanged(query);
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 )
               else

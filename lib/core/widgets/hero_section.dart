@@ -8,6 +8,8 @@ import 'package:luffytv/features/home/providers/anime_providers.dart';
 import 'package:luffytv/core/widgets/bouncing_button.dart';
 import '../../features/details/presentation/anime_details_screen.dart';
 import '../../features/home/data/models/anime.dart';
+import '../../features/player/presentation/video_player_screen.dart';
+import '../../core/services/local_db_service.dart';
 import 'poster_card.dart';
 
 class HeroSection extends ConsumerStatefulWidget {
@@ -96,9 +98,45 @@ class _HeroSectionState extends ConsumerState<HeroSection> {
   }
 }
 
-class _ActionButtons extends StatelessWidget {
+class _ActionButtons extends StatefulWidget {
   final Anime currentAnime;
   const _ActionButtons({required this.currentAnime});
+
+  @override
+  State<_ActionButtons> createState() => _ActionButtonsState();
+}
+
+class _ActionButtonsState extends State<_ActionButtons> {
+  late bool _isInMyList;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkMyList();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActionButtons oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentAnime.id != widget.currentAnime.id) {
+      _checkMyList();
+    }
+  }
+
+  void _checkMyList() {
+    _isInMyList = LocalDbService.isInMyList(widget.currentAnime.id);
+  }
+
+  void _toggleMyList() {
+    setState(() {
+      _isInMyList = !_isInMyList;
+    });
+    if (_isInMyList) {
+      LocalDbService.addToMyList(widget.currentAnime);
+    } else {
+      LocalDbService.removeFromMyList(widget.currentAnime.id);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,10 +144,19 @@ class _ActionButtons extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const SizedBox(width: 20),
-        _buildActionIcon(Icons.add, 'My List', onTap: () {}),
+        _buildActionIcon(_isInMyList ? Icons.check : Icons.add, 'My List', onTap: _toggleMyList),
         const Spacer(),
         BouncingButton(
-          onTap: () {},
+          onTap: () {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => VideoPlayerScreen(
+                animeTitle: widget.currentAnime.title,
+                animeSlug: widget.currentAnime.id,
+                episodeNumber: 1,
+                anime: widget.currentAnime,
+              ),
+            ));
+          },
           child: Container(
             height: 44,
             padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -130,7 +177,7 @@ class _ActionButtons extends StatelessWidget {
         ),
         const Spacer(),
         _buildActionIcon(Icons.info_outline, 'Info', onTap: () {
-          Navigator.of(context).push(MaterialPageRoute(builder: (_) => AnimeDetailsScreen(anime: currentAnime)));
+          Navigator.of(context).push(MaterialPageRoute(builder: (_) => AnimeDetailsScreen(anime: widget.currentAnime)));
         }),
         const SizedBox(width: 20),
       ],

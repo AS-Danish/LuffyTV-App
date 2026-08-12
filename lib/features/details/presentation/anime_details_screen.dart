@@ -7,6 +7,9 @@ import 'package:luffytv/features/details/providers/details_providers.dart';
 import 'package:luffytv/features/downloads/providers/download_providers.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
 import 'package:luffytv/features/player/presentation/video_player_screen.dart';
+import 'package:luffytv/core/services/local_db_service.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:luffytv/core/widgets/poster_card.dart';
 
 class AnimeDetailsScreen extends ConsumerStatefulWidget {
   final Anime anime;
@@ -20,6 +23,29 @@ class AnimeDetailsScreen extends ConsumerStatefulWidget {
 class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
   int _selectedChunkIndex = 0;
   bool _isDescriptionExpanded = false;
+  late bool _isInMyList;
+
+  @override
+  void initState() {
+    super.initState();
+    _isInMyList = LocalDbService.isInMyList(widget.anime.id);
+    
+    final progress = LocalDbService.getProgress(widget.anime.id);
+    if (progress != null && progress.lastWatchedEpisode > 0) {
+      _selectedChunkIndex = (progress.lastWatchedEpisode - 1) ~/ 100;
+    }
+  }
+
+  void _toggleMyList() {
+    setState(() {
+      _isInMyList = !_isInMyList;
+    });
+    if (_isInMyList) {
+      LocalDbService.addToMyList(widget.anime);
+    } else {
+      LocalDbService.removeFromMyList(widget.anime.id);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -115,6 +141,7 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                                     animeTitle: widget.anime.title,
                                     animeSlug: widget.anime.id,
                                     episodeNumber: 1, // Default to episode 1 for main play button
+                                    anime: widget.anime,
                                   ),
                                 ));
                               },
@@ -130,21 +157,22 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                               ),
                             ),
                           ),
-                          if (detail.episodeCount == 1) ...[
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () {},
-                                icon: const Icon(Icons.download, color: AppColors.textPrimary),
-                                label: Text('Download', style: AppTextStyles.button),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: AppColors.border),
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _toggleMyList,
+                              icon: Icon(
+                                _isInMyList ? Icons.check : Icons.add,
+                                color: AppColors.textPrimary,
+                              ),
+                              label: Text('My List', style: AppTextStyles.button),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: AppColors.border),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               ),
                             ),
-                          ],
+                          ),
                         ],
                       ),
                       const SizedBox(height: 24),
@@ -176,6 +204,35 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                         Text('Studios: ${detail.studios.join(', ')}', style: AppTextStyles.caption),
                       ],
                       const SizedBox(height: 32),
+                      if (detail.seasons.isNotEmpty) ...[
+                        Text('Related Seasons', style: AppTextStyles.sectionTitle),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 200, // accommodate poster + title
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: detail.seasons.length,
+                            separatorBuilder: (context, index) => const SizedBox(width: 12),
+                            itemBuilder: (context, index) {
+                              final season = detail.seasons[index];
+                              // Convert RelatedSeason to Anime so we can reuse PosterCard
+                              final relatedAnime = Anime(
+                                id: season.slug ?? season.id,
+                                title: season.title,
+                                genre: season.relation ?? 'Related', // use genre field for relation badge
+                                year: 0,
+                                posterUrl: season.posterUrl,
+                              );
+                              return PosterCard(
+                                anime: relatedAnime,
+                                width: 120,
+                                height: 180,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                      ],
                     ],
                   ),
                 );
@@ -269,7 +326,37 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                             child: const Icon(Icons.play_circle_outline, color: AppColors.textPrimary, size: 32),
                           ),
                           title: Text(ep.title, style: AppTextStyles.cardTitle.copyWith(color: AppColors.textPrimary)),
-                          subtitle: Text('Episode ${ep.episodeNumber}', style: AppTextStyles.caption),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Episode ${ep.episodeNumber}', style: AppTextStyles.caption),
+                              ValueListenableBuilder(
+                                valueListenable: Hive.box('watch_progress').listenable(keys: [widget.anime.id]),
+                                builder: (context, _, __) {
+                                  final prog = LocalDbService.getProgress(widget.anime.id);
+                                  double percentage = 0.0;
+                                  if (prog != null) {
+                                    final epProgress = prog.episodes[ep.episodeNumber.toString()];
+                                    if (epProgress != null && epProgress.durationSeconds > 0) {
+                                      percentage = (epProgress.positionSeconds / epProgress.durationSeconds).clamp(0.0, 1.0);
+                                    }
+                                  }
+                                  if (percentage > 0) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 8.0, right: 16.0),
+                                      child: LinearProgressIndicator(
+                                        value: percentage,
+                                        backgroundColor: AppColors.border,
+                                        color: AppColors.accentStart,
+                                        minHeight: 4,
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                }
+                              ),
+                            ],
+                          ),
                           trailing: Consumer(
                             builder: (context, ref, child) {
                               final downloads = ref.watch(downloadItemsProvider);
@@ -307,6 +394,7 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                                 animeTitle: widget.anime.title,
                                 animeSlug: widget.anime.id,
                                 episodeNumber: ep.episodeNumber,
+                                anime: widget.anime,
                               ),
                             ));
                           },

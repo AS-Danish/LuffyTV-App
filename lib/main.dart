@@ -6,9 +6,13 @@ import 'package:luffytv/main_nav_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import 'package:luffytv/core/services/local_db_service.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  
+  await LocalDbService.init();
   
   try {
     await dotenv.load(fileName: ".env");

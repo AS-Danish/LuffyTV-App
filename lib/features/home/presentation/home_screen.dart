@@ -12,9 +12,17 @@ import 'package:luffytv/core/widgets/section_row.dart';
 /// section is a named widget, and there's no inline layout logic here
 /// beyond spacing and responsive padding.
 import 'package:luffytv/features/home/data/models/anime.dart';
+import 'package:luffytv/core/services/local_db_service.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   List<Anime> _filter(List<Anime> animes, int categoryIndex) {
     if (categoryIndex == 0) return animes;
@@ -26,7 +34,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final r = Responsive.of(context);
     final selectedCategory = ref.watch(selectedCategoryProvider);
     
@@ -52,6 +60,23 @@ class HomeScreen extends ConsumerWidget {
                 const CategoryTabs(),
                 const SizedBox(height: 20),
                 const HeroSection(),
+                ValueListenableBuilder(
+                  valueListenable: Hive.box('watch_progress').listenable(),
+                  builder: (context, box, _) {
+                    final progressList = LocalDbService.getAllProgress();
+                    if (progressList.isEmpty) return const SizedBox.shrink();
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 32),
+                        SectionRow(
+                          title: "Continue Watching", 
+                          items: AsyncValue.data(progressList.map((wp) => wp.anime).toList())
+                        ),
+                      ],
+                    );
+                  }
+                ),
                 const SizedBox(height: 32),
                 SectionRow(title: "Editor's Picks", items: editorsPicks.whenData((data) => _filter(data, selectedCategory))),
                 const SizedBox(height: 32),

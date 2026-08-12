@@ -54,7 +54,7 @@ class Anime {
       title: json['title'] as String? ?? 'Untitled',
       genre: json['genre'] as String? ?? '',
       year: parsedYear,
-      posterUrl: json['image'] as String? ?? json['poster'] as String?,
+      posterUrl: json['posterUrl'] as String? ?? json['image'] as String? ?? json['poster'] as String?,
       description: json['synopsis'] as String? ?? json['description'] as String? ?? '',
       maturityRating: json['rating'] as String? ?? json['maturityRating'] as String? ?? 'TV-14',
       matchPercentage: json['matchPercentage'] as int? ?? 90,
@@ -65,5 +65,22 @@ class Anime {
               .toList() ??
           [],
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'genre': genre,
+      'year': year,
+      'posterUrl': posterUrl,
+      'gradientIndex': gradientIndex,
+      'description': description,
+      'maturityRating': maturityRating,
+      'matchPercentage': matchPercentage,
+      'cast': cast,
+      'creator': creator,
+      'seasons': seasons.map((e) => e.toJson()).toList(),
+    };
   }
 }

@@ -10,11 +10,17 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/features/home/data/models/watch_data.dart';
 import 'package:luffytv/features/home/providers/anime_providers.dart';
+import 'package:luffytv/core/services/local_db_service.dart';
+import 'package:luffytv/features/downloads/providers/download_providers.dart';
+import 'package:luffytv/features/downloads/data/models/download_item.dart';
+
+import '../../home/data/models/anime.dart';
 
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String animeTitle;
   final String animeSlug;
   final int episodeNumber;
+  final Anime? anime;
   final bool isLocal;
 
   const VideoPlayerScreen({
@@ -22,6 +28,7 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
     required this.animeTitle,
     required this.animeSlug,
     required this.episodeNumber,
+    this.anime,
     this.isLocal = false,
   });
 
@@ -43,6 +50,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   double _brightness = 0.5;
   String? _seekAnimationSide;
   Timer? _seekAnimationTimer;
+  Timer? _progressSaveTimer;
 
   @override
   void initState() {
@@ -59,6 +67,23 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
     _initPlayer();
     _initBrightness();
+    
+    // Save progress periodically
+    _progressSaveTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _saveProgress();
+    });
+  }
+
+  void _saveProgress() {
+    if (widget.anime != null && player.state.duration > Duration.zero) {
+      LocalDbService.saveProgress(
+        animeSlug: widget.animeSlug,
+        anime: widget.anime!,
+        episodeNumber: widget.episodeNumber,
+        position: player.state.position,
+        duration: player.state.duration,
+      );
+    }
   }
 
   Future<void> _initBrightness() async {
@@ -89,6 +114,38 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   Future<void> _initPlayer() async {
     try {
       final repo = ref.read(animeRepositoryProvider);
+      final downloadId = '${widget.animeSlug}_${widget.episodeNumber}';
+      final downloads = ref.read(downloadItemsProvider);
+      final localItem = downloads.where((d) => d.id == downloadId && d.state == DownloadState.completed).firstOrNull;
+      
+      // If the file is downloaded (or forced local), play the local file
+      if (widget.isLocal || localItem != null) {
+        if (localItem == null || localItem.localM3u8Path == null) {
+          throw Exception('Local file not found.');
+        }
+        
+        // Restore progress
+        final savedProgress = LocalDbService.getProgress(widget.animeSlug);
+        if (savedProgress != null) {
+          final epProgress = savedProgress.episodes[widget.episodeNumber.toString()];
+          if (epProgress != null) {
+            _savedPosition = Duration(seconds: epProgress.positionSeconds);
+          }
+        }
+        
+        await player.open(Media(localItem.localM3u8Path!));
+        if (_savedPosition != null) {
+          await player.seek(_savedPosition!);
+        }
+        player.play();
+        
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+      
+      // Otherwise fetch from API and stream
       final watchData = await repo.fetchWatchData(widget.animeSlug, widget.episodeNumber);
       _watchData = watchData;
 
@@ -103,6 +160,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
       if (bestSource == null) {
         throw Exception('No playable video sources found');
+      }
+
+      // Check if we have saved progress to resume from
+      final savedProgress = LocalDbService.getProgress(widget.animeSlug);
+      if (savedProgress != null) {
+        final epProgress = savedProgress.episodes[widget.episodeNumber.toString()];
+        if (epProgress != null) {
+          _savedPosition = Duration(seconds: epProgress.positionSeconds);
+        }
       }
 
       await _playSource(bestSource);
@@ -241,6 +307,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
   @override
   void dispose() {
+    _saveProgress();
+    _progressSaveTimer?.cancel();
     _seekAnimationTimer?.cancel();
     player.dispose();
     WakelockPlus.disable();

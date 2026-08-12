@@ -24,4 +24,13 @@ class Season {
           [],
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'seasonNumber': seasonNumber,
+      'title': title,
+      'episodes': episodes.map((e) => e.toJson()).toList(),
+    };
+  }
 }

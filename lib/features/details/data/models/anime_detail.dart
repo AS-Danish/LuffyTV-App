@@ -1,3 +1,5 @@
+import 'related_season.dart';
+
 class AnimeDetail {
   final String id;
   final String title;
@@ -12,6 +14,7 @@ class AnimeDetail {
   final List<String> studios;
   final bool hasSub;
   final bool hasDub;
+  final List<RelatedSeason> seasons;
 
   const AnimeDetail({
     required this.id,
@@ -27,6 +30,7 @@ class AnimeDetail {
     required this.studios,
     required this.hasSub,
     required this.hasDub,
+    this.seasons = const [],
   });
 
   factory AnimeDetail.fromJson(Map<String, dynamic> json) {
@@ -44,6 +48,10 @@ class AnimeDetail {
       studios: (json['studios'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       hasSub: json['hasSub'] as bool? ?? false,
       hasDub: json['hasDub'] as bool? ?? false,
+      seasons: (json['seasons'] as List<dynamic>?)
+              ?.map((e) => RelatedSeason.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
     );
   }
 }

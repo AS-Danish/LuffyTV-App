@@ -38,4 +38,18 @@ class Episode {
       hasDub: json['hasDub'] as bool? ?? false,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'episodeNumber': episodeNumber,
+      'title': title,
+      'durationMinutes': durationMinutes,
+      'description': description,
+      'thumbnailUrl': thumbnailUrl,
+      'progress': progress,
+      'hasSub': hasSub,
+      'hasDub': hasDub,
+    };
+  }
 }

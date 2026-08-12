@@ -97,7 +97,7 @@ class ApiAnimeRepository implements AnimeRepository {
 
   @override
   Future<AnimeDetail> fetchAnimeDetails(String slug) async {
-    final cacheKey = 'details_$slug';
+    final cacheKey = 'details_v2_$slug'; // updated cache key to bypass old missing seasons data
     if (cacheManager != null) {
       final cached = await cacheManager!.get(cacheKey);
       if (cached != null) return AnimeDetail.fromJson(cached);
