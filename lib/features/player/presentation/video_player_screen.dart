@@ -198,6 +198,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     if (source.referer != null) {
       headers['Referer'] = source.referer!;
     }
+
+    debugPrint('\n=== VIDEO PLAYER DEBUG ===');
+    debugPrint('Server: ${source.server}');
+    debugPrint('Original proxyUrl: ${source.proxyUrl}');
+    debugPrint('Original m3u8: ${source.m3u8}');
+    debugPrint('Original url: ${source.url}');
+    debugPrint('Final playing url: $url');
+    debugPrint('Headers: $headers');
+    debugPrint('==========================\n');
     
     await player.open(Media(url, httpHeaders: headers));
     
