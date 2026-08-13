@@ -187,6 +187,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   Future<void> _playSource(VideoSource source) async {
     _currentSource = source;
     String url = source.proxyUrl ?? source.m3u8 ?? source.url;
+    if (url.startsWith('/api')) {
+      url = "${ApiConstants.baseUrl}$url";
+    }
     if (url.startsWith('/')) {
       url = '${ApiConstants.baseUrl}$url';
     }
@@ -209,6 +212,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     if (captions.isNotEmpty) {
       final firstCaption = captions.first;
       String subUrl = firstCaption.proxyUrl ?? firstCaption.file;
+      if (subUrl.startsWith('/api')) {
+        subUrl = "${ApiConstants.baseUrl}$subUrl";
+      }
       if (subUrl.startsWith('/')) subUrl = '${ApiConstants.baseUrl}$subUrl';
       player.setSubtitleTrack(SubtitleTrack.uri(subUrl, title: firstCaption.label, language: firstCaption.label));
       _currentSubtitleTrack = firstCaption;
@@ -286,6 +292,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                                 onTap: () {
                                   Navigator.pop(context);
                                   String subUrl = track.proxyUrl ?? track.file;
+                                  if (subUrl.startsWith('/api')) {
+                                    subUrl = "${ApiConstants.baseUrl}$subUrl";
+                                  }
                                   if (subUrl.startsWith('/')) subUrl = '${ApiConstants.baseUrl}$subUrl';
                                   player.setSubtitleTrack(SubtitleTrack.uri(subUrl, title: track.label, language: track.label));
                                   setState(() { _currentSubtitleTrack = track; });
