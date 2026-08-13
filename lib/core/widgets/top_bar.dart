@@ -12,11 +12,10 @@ class TopBar extends StatelessWidget {
       children: [
         Row(
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: const BoxDecoration(gradient: AppColors.accentGradient, shape: BoxShape.circle),
-              child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
+            Image.asset(
+              'assets/images/LuffyTVLogo.png',
+              height: 36,
+              fit: BoxFit.contain,
             ),
             const SizedBox(width: 8),
             Text(

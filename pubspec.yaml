@@ -120,7 +120,9 @@ flutter_icons:
   image_path: "assets/images/LuffyTVLogo.png"
 
 flutter_native_splash:
-  color: "#0f0f0f"
+  color: "#ffffff"
+  color_dark: "#0f0f0f"
+  image_dark: "assets/images/LuffyTVLogo.png"
   image: "assets/images/LuffyTVLogo.png"
   android: true
   ios: true
