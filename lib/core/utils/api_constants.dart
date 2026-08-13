@@ -1,5 +1,6 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 class ApiConstants {
-  // Use 192.168.1.4 to allow physical Android devices on the same WiFi network
-  // to connect to the backend running on this computer.
-  static const String baseUrl = 'http://192.168.1.4:3000';
+  // Pulls the URL securely from your .env file
+  static String get baseUrl => dotenv.env['API_BASE_URL'] ?? 'https://anikoto-api-teramoto-danish.vercel.app';
 }
