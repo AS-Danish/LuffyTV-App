@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
 import 'package:luffytv/core/services/hls_downloader_service.dart';
 import 'package:luffytv/features/home/data/models/episode.dart';
@@ -40,7 +41,7 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     await prefs.setStringList(_prefsKey, data);
   }
 
-  void startDownload(Anime anime, Episode episode) {
+  void startDownload(Anime anime, Episode episode, String m3u8Url) {
     final id = '${anime.id}_${episode.episodeNumber}'; // using anime.id as slug equivalent
     
     // Check if already downloading or downloaded
@@ -62,20 +63,25 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     state = [...state.where((item) => item.id != id), newItem];
     _saveToPrefs();
 
-    _executeDownload(id);
+    _executeDownload(id, m3u8Url);
   }
 
-  Future<void> _executeDownload(String id) async {
+  Future<void> _executeDownload(String id, String m3u8Url) async {
     final downloader = ref.read(hlsDownloaderProvider);
+    await downloader.requestPermissions();
     
     try {
-      await for (final progress in downloader.downloadEpisode(id)) {
+      await for (final progress in downloader.downloadEpisode(id, m3u8Url)) {
         _updateItem(id, (item) => item.copyWith(progress: progress));
       }
+      
+      final tempDir = await getTemporaryDirectory();
+      final localPath = '${tempDir.path}/$id.mp4';
+      
       _updateItem(id, (item) => item.copyWith(
         state: DownloadState.completed, 
         progress: 1.0,
-        localM3u8Path: '/local/path/to/mock_$id.m3u8' // Mock path
+        localM3u8Path: localPath
       ));
     } catch (e) {
       _updateItem(id, (item) => item.copyWith(state: DownloadState.failed));

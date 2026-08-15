@@ -245,7 +245,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       ),
       builder: (context) {
         return DefaultTabController(
-          length: 2,
+          length: 3,
           child: Container(
             height: MediaQuery.of(context).size.height * 0.8,
             child: Column(
@@ -255,7 +255,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                   labelColor: AppColors.accentStart,
                   unselectedLabelColor: Colors.white54,
                   tabs: [
-                    Tab(text: 'Audio & Server'),
+                    Tab(text: 'Server'),
+                    Tab(text: 'Quality'),
                     Tab(text: 'Subtitles'),
                   ],
                 ),
@@ -277,6 +278,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                               _playSource(source).then((_) {
                                 setState(() { _isLoading = false; });
                               });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      // Quality Tab
+                      ListView(
+                        children: player.state.tracks.video.map((track) {
+                          final isSelected = player.state.track.video.id == track.id;
+                          return ListTile(
+                            title: Text(track.title ?? track.id, style: const TextStyle(color: Colors.white)),
+                            trailing: isSelected ? const Icon(Icons.check, color: AppColors.accentStart) : null,
+                            onTap: () {
+                              Navigator.pop(context);
+                              player.setVideoTrack(track);
                             },
                           );
                         }).toList(),
