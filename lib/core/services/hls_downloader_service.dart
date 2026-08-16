@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:ffmpeg_kit_flutter_new/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/session_state.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -10,6 +12,7 @@ import 'dart:io';
 
 class HlsDownloaderService {
   final _notifications = FlutterLocalNotificationsPlugin();
+  final Map<String, FFmpegSession> _activeSessions = {};
   
   HlsDownloaderService() {
     _initNotifications();
@@ -25,7 +28,17 @@ class HlsDownloaderService {
     await Permission.notification.request();
   }
 
-  Stream<double> downloadEpisode(String id, String m3u8Url) async* {
+  Future<void> cancelDownload(String id) async {
+    final session = _activeSessions[id];
+    if (session != null) {
+      final sessionId = await session.getSessionId();
+      await FFmpegKit.cancel(sessionId);
+      _activeSessions.remove(id);
+      _notifications.cancel(id: id.hashCode);
+    }
+  }
+
+  Stream<double> downloadEpisode(String id, String m3u8Url, {String? referer}) async* {
     yield 0.0;
     
     final tempDir = await getTemporaryDirectory();
@@ -54,16 +67,36 @@ class HlsDownloaderService {
     if (totalDurationMs <= 0) totalDurationMs = 1440000;
 
     double currentProgress = 0.0;
+    int currentSizeInBytes = 0;
     
-    final session = await FFmpegKit.executeAsync(
-      '-i "$m3u8Url" -c copy "$outputPath"',
+    final arguments = <String>[];
+    if (referer != null && referer.isNotEmpty) {
+      arguments.add('-headers');
+      arguments.add('Referer: $referer\r\n');
+    }
+    arguments.add('-f');
+    arguments.add('hls');
+    arguments.add('-allowed_segment_extensions');
+    arguments.add('ALL');
+    arguments.add('-extension_picky');
+    arguments.add('0');
+    arguments.add('-i');
+    arguments.add(m3u8Url);
+    arguments.add('-c');
+    arguments.add('copy');
+    arguments.add(outputPath);
+
+    final session = await FFmpegKit.executeWithArgumentsAsync(
+      arguments,
       (session) async {
       },
       (log) {
+        print('FFmpeg Log: ${log.getMessage()}');
       },
       (statistics) {
          if (statistics != null) {
            final timeInMs = statistics.getTime();
+           currentSizeInBytes = statistics.getSize();
            if (timeInMs > 0) {
              currentProgress = timeInMs / totalDurationMs;
              if (currentProgress > 0.99) currentProgress = 0.99;
@@ -71,12 +104,17 @@ class HlsDownloaderService {
          }
       }
     );
+    
+    _activeSessions[id] = session;
 
-    void showProgressNotification(double progress) {
+    void showProgressNotification(double progress, int sizeInBytes) {
+      final sizeInMb = (sizeInBytes / 1024 / 1024).toStringAsFixed(1);
+      final estimatedTotalMb = progress > 0.0 ? ((sizeInBytes / progress) / 1024 / 1024).toStringAsFixed(1) : '...';
+      
       _notifications.show(
         id: notificationId,
         title: 'Downloading Episode...',
-        body: '${(progress * 100).toInt()}%',
+        body: '$sizeInMb MB / $estimatedTotalMb MB',
         notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             'download_channel',
@@ -89,6 +127,14 @@ class HlsDownloaderService {
             progress: (progress * 100).toInt(),
             ongoing: true,
             onlyAlertOnce: true,
+            actions: [
+              const AndroidNotificationAction(
+                'cancel_download',
+                'Cancel',
+                cancelNotification: true,
+                showsUserInterface: false,
+              ),
+            ],
           )
         )
       );
@@ -107,7 +153,7 @@ class HlsDownloaderService {
       }
       final displayProgress = currentProgress > 0.0 ? currentProgress : fakeProgress;
       
-      if (state.name == 'COMPLETED' || state.name == 'FAILED' || state.name == 'KILLED') {
+      if (state == SessionState.completed || state == SessionState.failed) {
         final returnCode = await session.getReturnCode();
         if (ReturnCode.isSuccess(returnCode)) {
           _notifications.show(
@@ -123,12 +169,13 @@ class HlsDownloaderService {
               )
             )
           );
+          _activeSessions.remove(id);
           yield 1.0;
         } else {
           _notifications.show(
             id: notificationId,
-            title: 'Download Failed',
-            body: 'Episode failed to download.',
+            title: 'Download Failed / Cancelled',
+            body: 'Episode failed or was cancelled.',
             notificationDetails: const NotificationDetails(
               android: AndroidNotificationDetails(
                 'download_channel',
@@ -138,12 +185,13 @@ class HlsDownloaderService {
               )
             )
           );
+          _activeSessions.remove(id);
           final failLog = await session.getFailStackTrace();
-          throw Exception('Download failed with state: ${state.name}, error: $failLog');
+          throw Exception('Download failed with state: $state, error: $failLog');
         }
         break;
       } else {
-        showProgressNotification(displayProgress);
+        showProgressNotification(displayProgress, currentSizeInBytes);
         yield displayProgress;
       }
     }

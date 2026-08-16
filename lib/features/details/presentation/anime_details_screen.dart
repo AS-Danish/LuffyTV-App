@@ -67,11 +67,13 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
         orElse: () => watchData.sources.first
       );
       
-      String m3u8Url = bestSource.proxyUrl ?? bestSource.m3u8 ?? bestSource.url;
-      if (m3u8Url.startsWith('/api')) m3u8Url = '${ApiConstants.baseUrl}$m3u8Url';
-      if (m3u8Url.startsWith('/')) m3u8Url = '${ApiConstants.baseUrl}$m3u8Url';
+      String masterUrl = bestSource.m3u8 ?? bestSource.url;
+      final headers = <String, String>{};
+      if (bestSource.referer != null && bestSource.referer!.isNotEmpty) {
+        headers['Referer'] = bestSource.referer!;
+      }
       
-      final response = await http.get(Uri.parse(m3u8Url));
+      final response = await http.get(Uri.parse(masterUrl), headers: headers);
       final lines = response.body.split('\n');
       
       List<Map<String, String>> qualities = [];
@@ -79,17 +81,28 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
       for (int i = 0; i < lines.length; i++) {
         if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
           final resMatch = RegExp(r'RESOLUTION=(\d+x\d+)').firstMatch(lines[i]);
+          final bwMatch = RegExp(r'BANDWIDTH=(\d+)').firstMatch(lines[i]);
+          
           final resolution = resMatch != null ? resMatch.group(1) : 'Unknown';
+          
+          String sizeStr = '';
+          if (bwMatch != null) {
+            final bandwidth = int.parse(bwMatch.group(1)!);
+            // Assuming typical 24 mins (1440 seconds)
+            final sizeMb = (bandwidth / 8 * 1440) / 1024 / 1024;
+            sizeStr = ' (~${sizeMb.toStringAsFixed(1)} MB)';
+          }
           
           String formattedRes = resolution ?? 'Unknown';
           if (formattedRes != 'Unknown' && formattedRes.contains('x')) {
             formattedRes = '${formattedRes.split('x').last}p';
           }
+          formattedRes += sizeStr;
           
           if (i + 1 < lines.length) {
             String variantUrl = lines[i+1].trim();
             if (!variantUrl.startsWith('http')) {
-               final uri = Uri.parse(m3u8Url);
+               final uri = Uri.parse(masterUrl);
                variantUrl = uri.resolve(variantUrl).toString();
             }
             qualities.add({'resolution': formattedRes, 'url': variantUrl});
@@ -100,7 +113,7 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
       if (context.mounted) Navigator.pop(context); // pop loading
       
       if (qualities.isEmpty) {
-        ref.read(downloadItemsProvider.notifier).startDownload(anime, ep, m3u8Url);
+        ref.read(downloadItemsProvider.notifier).startDownload(anime, ep, masterUrl, referer: bestSource.referer);
         return;
       }
       
@@ -125,7 +138,7 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                     trailing: const Icon(Icons.download, color: AppColors.accentStart),
                     onTap: () {
                       Navigator.pop(ctx);
-                      ref.read(downloadItemsProvider.notifier).startDownload(anime, ep, q['url']!);
+                      ref.read(downloadItemsProvider.notifier).startDownload(anime, ep, q['url']!, referer: bestSource.referer);
                     }
                   )),
                 ],
@@ -460,14 +473,25 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
 
                               if (currentDownload != null) {
                                 if (currentDownload.state == DownloadState.downloading) {
-                                  return SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      value: currentDownload.progress,
-                                      strokeWidth: 2.5,
-                                      backgroundColor: AppColors.border,
-                                      color: AppColors.accentStart,
+                                  return GestureDetector(
+                                    onTap: () {
+                                      ref.read(downloadItemsProvider.notifier).cancelDownload(downloadId);
+                                    },
+                                    child: SizedBox(
+                                      width: 28,
+                                      height: 28,
+                                      child: Stack(
+                                        alignment: Alignment.center,
+                                        children: [
+                                          CircularProgressIndicator(
+                                            value: currentDownload.progress,
+                                            strokeWidth: 2.5,
+                                            backgroundColor: AppColors.border,
+                                            color: AppColors.accentStart,
+                                          ),
+                                          const Icon(Icons.stop, size: 16, color: AppColors.textPrimary),
+                                        ],
+                                      ),
                                     ),
                                   );
                                 } else if (currentDownload.state == DownloadState.completed) {

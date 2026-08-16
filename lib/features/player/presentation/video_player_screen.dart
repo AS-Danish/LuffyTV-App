@@ -139,6 +139,30 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         }
         player.play();
         
+        // Fetch watch data in background to enable subtitles and settings for local files
+        try {
+          final watchData = await repo.fetchWatchData(widget.animeSlug, widget.episodeNumber);
+          _watchData = watchData;
+          VideoSource? bestSource;
+          try {
+            bestSource = watchData.sources.firstWhere((s) => s.type == 'sub' && s.m3u8 != null);
+          } catch (_) {
+            if (watchData.sources.isNotEmpty) bestSource = watchData.sources.first;
+          }
+          if (bestSource != null) {
+            _currentSource = bestSource;
+            final captions = bestSource.tracks.where((t) => t.kind == 'captions').toList();
+            if (captions.isNotEmpty) {
+              final firstCaption = captions.first;
+              String subUrl = firstCaption.proxyUrl ?? firstCaption.file;
+              if (subUrl.startsWith('/api')) subUrl = "${ApiConstants.baseUrl}$subUrl";
+              if (subUrl.startsWith('/')) subUrl = '${ApiConstants.baseUrl}$subUrl';
+              player.setSubtitleTrack(SubtitleTrack.uri(subUrl, title: firstCaption.label, language: firstCaption.label));
+              _currentSubtitleTrack = firstCaption;
+            }
+          }
+        } catch (_) {}
+        
         setState(() {
           _isLoading = false;
         });
@@ -286,8 +310,18 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                       ListView(
                         children: player.state.tracks.video.map((track) {
                           final isSelected = player.state.track.video.id == track.id;
+                          
+                          String trackName = track.title ?? track.id;
+                          if (track.id == 'auto') {
+                            trackName = 'Auto';
+                          } else if (track.id == 'no') {
+                            trackName = 'Video Disabled';
+                          } else if (track.h != null && track.h! > 0) {
+                            trackName = '${track.h}p';
+                          }
+
                           return ListTile(
-                            title: Text(track.title ?? track.id, style: const TextStyle(color: Colors.white)),
+                            title: Text(trackName, style: const TextStyle(color: Colors.white)),
                             trailing: isSelected ? const Icon(Icons.check, color: AppColors.accentStart) : null,
                             onTap: () {
                               Navigator.pop(context);

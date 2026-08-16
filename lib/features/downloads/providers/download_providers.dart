@@ -41,7 +41,7 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     await prefs.setStringList(_prefsKey, data);
   }
 
-  void startDownload(Anime anime, Episode episode, String m3u8Url) {
+  void startDownload(Anime anime, Episode episode, String m3u8Url, {String? referer}) {
     final id = '${anime.id}_${episode.episodeNumber}'; // using anime.id as slug equivalent
     
     // Check if already downloading or downloaded
@@ -63,15 +63,15 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     state = [...state.where((item) => item.id != id), newItem];
     _saveToPrefs();
 
-    _executeDownload(id, m3u8Url);
+    _executeDownload(id, m3u8Url, referer: referer);
   }
 
-  Future<void> _executeDownload(String id, String m3u8Url) async {
+  Future<void> _executeDownload(String id, String m3u8Url, {String? referer}) async {
     final downloader = ref.read(hlsDownloaderProvider);
     await downloader.requestPermissions();
     
     try {
-      await for (final progress in downloader.downloadEpisode(id, m3u8Url)) {
+      await for (final progress in downloader.downloadEpisode(id, m3u8Url, referer: referer)) {
         _updateItem(id, (item) => item.copyWith(progress: progress));
       }
       
@@ -96,5 +96,10 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
   void removeDownload(String id) {
     state = state.where((item) => item.id != id).toList();
     _saveToPrefs();
+  }
+
+  void cancelDownload(String id) {
+    ref.read(hlsDownloaderProvider).cancelDownload(id);
+    _updateItem(id, (item) => item.copyWith(state: DownloadState.failed));
   }
 }
