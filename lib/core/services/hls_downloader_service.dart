@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
@@ -13,7 +14,7 @@ import 'dart:io';
 class HlsDownloaderService {
   final _notifications = FlutterLocalNotificationsPlugin();
   final Map<String, FFmpegSession> _activeSessions = {};
-  
+
   HlsDownloaderService() {
     _initNotifications();
   }
@@ -31,27 +32,32 @@ class HlsDownloaderService {
   Future<void> cancelDownload(String id) async {
     final session = _activeSessions[id];
     if (session != null) {
-      final sessionId = await session.getSessionId();
+      final sessionId = session.getSessionId();
       await FFmpegKit.cancel(sessionId);
       _activeSessions.remove(id);
       _notifications.cancel(id: id.hashCode);
     }
   }
 
-  Stream<double> downloadEpisode(String id, String m3u8Url, {String? referer}) async* {
+  Stream<double> downloadEpisode(
+    String id,
+    String m3u8Url, {
+    String? referer,
+  }) async* {
     yield 0.0;
-    
+
     final tempDir = await getTemporaryDirectory();
     final outputPath = '${tempDir.path}/$id.mp4';
     final notificationId = id.hashCode;
-    
+
     // Check if already exists
     if (File(outputPath).existsSync()) {
       File(outputPath).deleteSync();
     }
-    
+
     // Attempt to get duration using FFprobe
-    int totalDurationMs = 1440000; // Default to 24 mins for Anime if probe fails
+    int totalDurationMs =
+        1440000; // Default to 24 mins for Anime if probe fails
     try {
       final sessionInfo = await FFprobeKit.getMediaInformation(m3u8Url);
       final mediaInfo = sessionInfo.getMediaInformation();
@@ -68,7 +74,7 @@ class HlsDownloaderService {
 
     double currentProgress = 0.0;
     int currentSizeInBytes = 0;
-    
+
     final arguments = <String>[];
     if (referer != null && referer.isNotEmpty) {
       arguments.add('-headers');
@@ -88,29 +94,30 @@ class HlsDownloaderService {
 
     final session = await FFmpegKit.executeWithArgumentsAsync(
       arguments,
-      (session) async {
-      },
+      (session) async {},
       (log) {
-        print('FFmpeg Log: ${log.getMessage()}');
+        if (kDebugMode) {
+          debugPrint('FFmpeg Log: ${log.getMessage()}');
+        }
       },
       (statistics) {
-         if (statistics != null) {
-           final timeInMs = statistics.getTime();
-           currentSizeInBytes = statistics.getSize();
-           if (timeInMs > 0) {
-             currentProgress = timeInMs / totalDurationMs;
-             if (currentProgress > 0.99) currentProgress = 0.99;
-           }
-         }
-      }
+        final timeInMs = statistics.getTime();
+        currentSizeInBytes = statistics.getSize();
+        if (timeInMs > 0) {
+          currentProgress = timeInMs / totalDurationMs;
+          if (currentProgress > 0.99) currentProgress = 0.99;
+        }
+      },
     );
-    
+
     _activeSessions[id] = session;
 
     void showProgressNotification(double progress, int sizeInBytes) {
       final sizeInMb = (sizeInBytes / 1024 / 1024).toStringAsFixed(1);
-      final estimatedTotalMb = progress > 0.0 ? ((sizeInBytes / progress) / 1024 / 1024).toStringAsFixed(1) : '...';
-      
+      final estimatedTotalMb = progress > 0.0
+          ? ((sizeInBytes / progress) / 1024 / 1024).toStringAsFixed(1)
+          : '...';
+
       _notifications.show(
         id: notificationId,
         title: 'Downloading Episode...',
@@ -135,8 +142,8 @@ class HlsDownloaderService {
                 showsUserInterface: false,
               ),
             ],
-          )
-        )
+          ),
+        ),
       );
     }
 
@@ -146,13 +153,15 @@ class HlsDownloaderService {
     while (true) {
       await Future.delayed(const Duration(milliseconds: 1000));
       final state = await session.getState();
-      
+
       if (currentProgress == 0.0) {
         fakeProgress += 0.01;
         if (fakeProgress > 0.15) fakeProgress = 0.15;
       }
-      final displayProgress = currentProgress > 0.0 ? currentProgress : fakeProgress;
-      
+      final displayProgress = currentProgress > 0.0
+          ? currentProgress
+          : fakeProgress;
+
       if (state == SessionState.completed || state == SessionState.failed) {
         final returnCode = await session.getReturnCode();
         if (ReturnCode.isSuccess(returnCode)) {
@@ -166,8 +175,8 @@ class HlsDownloaderService {
                 'Downloads',
                 importance: Importance.defaultImportance,
                 priority: Priority.defaultPriority,
-              )
-            )
+              ),
+            ),
           );
           _activeSessions.remove(id);
           yield 1.0;
@@ -182,12 +191,14 @@ class HlsDownloaderService {
                 'Downloads',
                 importance: Importance.defaultImportance,
                 priority: Priority.defaultPriority,
-              )
-            )
+              ),
+            ),
           );
           _activeSessions.remove(id);
           final failLog = await session.getFailStackTrace();
-          throw Exception('Download failed with state: $state, error: $failLog');
+          throw Exception(
+            'Download failed with state: $state, error: $failLog',
+          );
         }
         break;
       } else {

@@ -7,7 +7,8 @@ class Responsive {
   final double width;
   const Responsive(this.width);
 
-  factory Responsive.of(BuildContext context) => Responsive(MediaQuery.sizeOf(context).width);
+  factory Responsive.of(BuildContext context) =>
+      Responsive(MediaQuery.sizeOf(context).width);
 
   bool get isMobile => width < 600;
   bool get isTablet => width >= 600 && width < 1024;
@@ -15,12 +16,22 @@ class Responsive {
 
   /// Horizontal screen padding scales with available width instead of
   /// being a fixed magic number everywhere.
-  double get screenPadding => isMobile ? 20 : (isTablet ? 40 : 80);
+  double get screenPadding => isMobile ? 18 : (isTablet ? 32 : 56);
+
+  double get contentMaxWidth => 1440;
+
+  int get gridColumns {
+    if (width < 390) return 2;
+    if (width < 700) return 3;
+    if (width < 1050) return 4;
+    return 6;
+  }
 
   /// Poster card width scales too, so grids/rows don't look sparse or
   /// cramped just because the app happens to run on a tablet or web.
-  double get posterCardWidth => isMobile ? 120 : (isTablet ? 150 : 170);
+  double get posterCardWidth =>
+      width < 390 ? 116 : (isMobile ? 132 : (isTablet ? 154 : 176));
 
-  double get heroCardWidth => isMobile ? 220 : (isTablet ? 300 : 360);
-  double get heroCardHeight => isMobile ? 380 : (isTablet ? 480 : 540);
+  double get heroCardWidth => isMobile ? width - 36 : (isTablet ? 560 : 720);
+  double get heroCardHeight => isMobile ? 470 : (isTablet ? 500 : 540);
 }

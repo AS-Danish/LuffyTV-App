@@ -7,7 +7,7 @@ final searchQueryProvider = StateProvider<String>((ref) => '');
 
 final searchAnimeProvider = FutureProvider<List<Anime>>((ref) async {
   final query = ref.watch(searchQueryProvider);
-  if (query.trim().isEmpty) {
+  if (query.trim().length < 2) {
     return [];
   }
   return ref.watch(animeRepositoryProvider).searchAnime(query);

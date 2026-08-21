@@ -15,6 +15,8 @@ class MainNavScreen extends ConsumerWidget {
     final navIndex = ref.watch(selectedNavIndexProvider);
 
     return Scaffold(
+      extendBody: true,
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
           IndexedStack(
@@ -26,12 +28,7 @@ class MainNavScreen extends ConsumerWidget {
               ProfileScreen(),
             ],
           ),
-          const Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: FloatingNav(),
-          ),
+          const Positioned(left: 0, right: 0, bottom: 0, child: FloatingNav()),
         ],
       ),
     );

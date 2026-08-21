@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:luffytv/core/utils/api_constants.dart';
 import 'package:flutter/services.dart';
@@ -41,7 +42,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   late final VideoController controller;
   bool _isLoading = true;
   String? _error;
-  
+
   WatchData? _watchData;
   VideoSource? _currentSource;
   VideoTrack? _currentSubtitleTrack;
@@ -67,7 +68,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
     _initPlayer();
     _initBrightness();
-    
+
     // Save progress periodically
     _progressSaveTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       _saveProgress();
@@ -88,7 +89,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
   Future<void> _initBrightness() async {
     try {
-      final current = await ScreenBrightness().current;
+      final current = await ScreenBrightness().application;
       if (mounted) {
         setState(() {
           _brightness = current;
@@ -116,66 +117,95 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       final repo = ref.read(animeRepositoryProvider);
       final downloadId = '${widget.animeSlug}_${widget.episodeNumber}';
       final downloads = ref.read(downloadItemsProvider);
-      final localItem = downloads.where((d) => d.id == downloadId && d.state == DownloadState.completed).firstOrNull;
-      
+      final localItem = downloads
+          .where(
+            (d) => d.id == downloadId && d.state == DownloadState.completed,
+          )
+          .firstOrNull;
+
       // If the file is downloaded (or forced local), play the local file
       if (widget.isLocal || localItem != null) {
         if (localItem == null || localItem.localM3u8Path == null) {
           throw Exception('Local file not found.');
         }
-        
+
         // Restore progress
         final savedProgress = LocalDbService.getProgress(widget.animeSlug);
         if (savedProgress != null) {
-          final epProgress = savedProgress.episodes[widget.episodeNumber.toString()];
+          final epProgress =
+              savedProgress.episodes[widget.episodeNumber.toString()];
           if (epProgress != null) {
             _savedPosition = Duration(seconds: epProgress.positionSeconds);
           }
         }
-        
+
         await player.open(Media(localItem.localM3u8Path!));
         if (_savedPosition != null) {
           await player.seek(_savedPosition!);
         }
         player.play();
-        
+
         // Fetch watch data in background to enable subtitles and settings for local files
         try {
-          final watchData = await repo.fetchWatchData(widget.animeSlug, widget.episodeNumber);
+          final watchData = await repo.fetchWatchData(
+            widget.animeSlug,
+            widget.episodeNumber,
+          );
           _watchData = watchData;
           VideoSource? bestSource;
           try {
-            bestSource = watchData.sources.firstWhere((s) => s.type == 'sub' && s.m3u8 != null);
+            bestSource = watchData.sources.firstWhere(
+              (s) => s.type == 'sub' && s.m3u8 != null,
+            );
           } catch (_) {
-            if (watchData.sources.isNotEmpty) bestSource = watchData.sources.first;
+            if (watchData.sources.isNotEmpty) {
+              bestSource = watchData.sources.first;
+            }
           }
           if (bestSource != null) {
             _currentSource = bestSource;
-            final captions = bestSource.tracks.where((t) => t.kind == 'captions').toList();
+            final captions = bestSource.tracks
+                .where((t) => t.kind == 'captions')
+                .toList();
             if (captions.isNotEmpty) {
               final firstCaption = captions.first;
               String subUrl = firstCaption.proxyUrl ?? firstCaption.file;
-              if (subUrl.startsWith('/api')) subUrl = "${ApiConstants.baseUrl}$subUrl";
-              if (subUrl.startsWith('/')) subUrl = '${ApiConstants.baseUrl}$subUrl';
-              player.setSubtitleTrack(SubtitleTrack.uri(subUrl, title: firstCaption.label, language: firstCaption.label));
+              if (subUrl.startsWith('/api')) {
+                subUrl = "${ApiConstants.baseUrl}$subUrl";
+              }
+              if (subUrl.startsWith('/')) {
+                subUrl = '${ApiConstants.baseUrl}$subUrl';
+              }
+              player.setSubtitleTrack(
+                SubtitleTrack.uri(
+                  subUrl,
+                  title: firstCaption.label,
+                  language: firstCaption.label,
+                ),
+              );
               _currentSubtitleTrack = firstCaption;
             }
           }
         } catch (_) {}
-        
+
         setState(() {
           _isLoading = false;
         });
         return;
       }
-      
+
       // Otherwise fetch from API and stream
-      final watchData = await repo.fetchWatchData(widget.animeSlug, widget.episodeNumber);
+      final watchData = await repo.fetchWatchData(
+        widget.animeSlug,
+        widget.episodeNumber,
+      );
       _watchData = watchData;
 
       VideoSource? bestSource;
       try {
-        bestSource = watchData.sources.firstWhere((s) => s.type == 'sub' && s.m3u8 != null);
+        bestSource = watchData.sources.firstWhere(
+          (s) => s.type == 'sub' && s.m3u8 != null,
+        );
       } catch (_) {
         if (watchData.sources.isNotEmpty) {
           bestSource = watchData.sources.first;
@@ -189,14 +219,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       // Check if we have saved progress to resume from
       final savedProgress = LocalDbService.getProgress(widget.animeSlug);
       if (savedProgress != null) {
-        final epProgress = savedProgress.episodes[widget.episodeNumber.toString()];
+        final epProgress =
+            savedProgress.episodes[widget.episodeNumber.toString()];
         if (epProgress != null) {
           _savedPosition = Duration(seconds: epProgress.positionSeconds);
         }
       }
 
       await _playSource(bestSource);
-      
+
       setState(() {
         _isLoading = false;
       });
@@ -217,27 +248,23 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     if (url.startsWith('/')) {
       url = '${ApiConstants.baseUrl}$url';
     }
-    
+
     final Map<String, String> headers = {};
     if (source.referer != null) {
       headers['Referer'] = source.referer!;
     }
 
-    debugPrint('\n=== VIDEO PLAYER DEBUG ===');
-    debugPrint('Server: ${source.server}');
-    debugPrint('Original proxyUrl: ${source.proxyUrl}');
-    debugPrint('Original m3u8: ${source.m3u8}');
-    debugPrint('Original url: ${source.url}');
-    debugPrint('Final playing url: $url');
-    debugPrint('Headers: $headers');
-    debugPrint('==========================\n');
-    
+    if (kDebugMode) {
+      debugPrint('Headers: $headers');
+      debugPrint('==========================\n');
+    }
+
     await player.open(Media(url, httpHeaders: headers));
-    
+
     if (_savedPosition != null) {
       await player.seek(_savedPosition!);
     }
-    
+
     player.play();
 
     // Default to the first available subtitle track if any exist
@@ -249,7 +276,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         subUrl = "${ApiConstants.baseUrl}$subUrl";
       }
       if (subUrl.startsWith('/')) subUrl = '${ApiConstants.baseUrl}$subUrl';
-      player.setSubtitleTrack(SubtitleTrack.uri(subUrl, title: firstCaption.label, language: firstCaption.label));
+      player.setSubtitleTrack(
+        SubtitleTrack.uri(
+          subUrl,
+          title: firstCaption.label,
+          language: firstCaption.label,
+        ),
+      );
       _currentSubtitleTrack = firstCaption;
     } else {
       player.setSubtitleTrack(SubtitleTrack.no());
@@ -259,7 +292,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
   void _showSettingsModal() {
     if (_watchData == null) return;
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -270,7 +303,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       builder: (context) {
         return DefaultTabController(
           length: 3,
-          child: Container(
+          child: SizedBox(
             height: MediaQuery.of(context).size.height * 0.8,
             child: Column(
               children: [
@@ -291,16 +324,26 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                       ListView(
                         children: _watchData!.sources.map((source) {
                           return ListTile(
-                            title: Text('${source.server} (${source.type.toUpperCase()})', style: const TextStyle(color: Colors.white)),
-                            trailing: _currentSource == source ? const Icon(Icons.check, color: AppColors.accentStart) : null,
+                            title: Text(
+                              '${source.server} (${source.type.toUpperCase()})',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            trailing: _currentSource == source
+                                ? const Icon(
+                                    Icons.check,
+                                    color: AppColors.accentStart,
+                                  )
+                                : null,
                             onTap: () {
                               Navigator.pop(context);
-                              setState(() { 
-                                _isLoading = true; 
+                              setState(() {
+                                _isLoading = true;
                                 _savedPosition = player.state.position;
                               });
                               _playSource(source).then((_) {
-                                setState(() { _isLoading = false; });
+                                setState(() {
+                                  _isLoading = false;
+                                });
                               });
                             },
                           );
@@ -309,8 +352,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                       // Quality Tab
                       ListView(
                         children: player.state.tracks.video.map((track) {
-                          final isSelected = player.state.track.video.id == track.id;
-                          
+                          final isSelected =
+                              player.state.track.video.id == track.id;
+
                           String trackName = track.title ?? track.id;
                           if (track.id == 'auto') {
                             trackName = 'Auto';
@@ -321,8 +365,16 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                           }
 
                           return ListTile(
-                            title: Text(trackName, style: const TextStyle(color: Colors.white)),
-                            trailing: isSelected ? const Icon(Icons.check, color: AppColors.accentStart) : null,
+                            title: Text(
+                              trackName,
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            trailing: isSelected
+                                ? const Icon(
+                                    Icons.check,
+                                    color: AppColors.accentStart,
+                                  )
+                                : null,
                             onTap: () {
                               Navigator.pop(context);
                               player.setVideoTrack(track);
@@ -334,31 +386,68 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                       ListView(
                         children: [
                           ListTile(
-                            title: const Text('None', style: TextStyle(color: Colors.white)),
-                            trailing: _currentSubtitleTrack == null ? const Icon(Icons.check, color: AppColors.accentStart) : null,
+                            title: const Text(
+                              'None',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            trailing: _currentSubtitleTrack == null
+                                ? const Icon(
+                                    Icons.check,
+                                    color: AppColors.accentStart,
+                                  )
+                                : null,
                             onTap: () {
                               Navigator.pop(context);
                               player.setSubtitleTrack(SubtitleTrack.no());
-                              setState(() { _currentSubtitleTrack = null; });
+                              setState(() {
+                                _currentSubtitleTrack = null;
+                              });
                             },
                           ),
                           if (_currentSource != null)
-                            ..._currentSource!.tracks.where((t) => t.kind == 'captions').map((track) {
-                              return ListTile(
-                                title: Text(track.label, style: const TextStyle(color: Colors.white)),
-                                trailing: _currentSubtitleTrack?.label == track.label ? const Icon(Icons.check, color: AppColors.accentStart) : null,
-                                onTap: () {
-                                  Navigator.pop(context);
-                                  String subUrl = track.proxyUrl ?? track.file;
-                                  if (subUrl.startsWith('/api')) {
-                                    subUrl = "${ApiConstants.baseUrl}$subUrl";
-                                  }
-                                  if (subUrl.startsWith('/')) subUrl = '${ApiConstants.baseUrl}$subUrl';
-                                  player.setSubtitleTrack(SubtitleTrack.uri(subUrl, title: track.label, language: track.label));
-                                  setState(() { _currentSubtitleTrack = track; });
-                                },
-                              );
-                            }).toList(),
+                            ..._currentSource!.tracks
+                                .where((t) => t.kind == 'captions')
+                                .map((track) {
+                                  return ListTile(
+                                    title: Text(
+                                      track.label,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    trailing:
+                                        _currentSubtitleTrack?.label ==
+                                            track.label
+                                        ? const Icon(
+                                            Icons.check,
+                                            color: AppColors.accentStart,
+                                          )
+                                        : null,
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      String subUrl =
+                                          track.proxyUrl ?? track.file;
+                                      if (subUrl.startsWith('/api')) {
+                                        subUrl =
+                                            "${ApiConstants.baseUrl}$subUrl";
+                                      }
+                                      if (subUrl.startsWith('/')) {
+                                        subUrl =
+                                            '${ApiConstants.baseUrl}$subUrl';
+                                      }
+                                      player.setSubtitleTrack(
+                                        SubtitleTrack.uri(
+                                          subUrl,
+                                          title: track.label,
+                                          language: track.label,
+                                        ),
+                                      );
+                                      setState(() {
+                                        _currentSubtitleTrack = track;
+                                      });
+                                    },
+                                  );
+                                }),
                         ],
                       ),
                     ],
@@ -420,9 +509,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       backgroundColor: Colors.black,
       body: MaterialVideoControlsTheme(
         normal: MaterialVideoControlsThemeData(
-          bottomButtonBarMargin: const EdgeInsets.only(left: 48, right: 48, bottom: 48),
+          bottomButtonBarMargin: const EdgeInsets.only(
+            left: 48,
+            right: 48,
+            bottom: 48,
+          ),
           seekBarMargin: const EdgeInsets.only(left: 48, right: 48, bottom: 48),
-          topButtonBarMargin: const EdgeInsets.only(left: 16, right: 16, top: 24),
+          topButtonBarMargin: const EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 24,
+          ),
           topButtonBar: [
             MaterialCustomButton(
               onPressed: () => Navigator.pop(context),
@@ -432,7 +529,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
             Expanded(
               child: Text(
                 '${widget.animeTitle} - Episode ${widget.episodeNumber}',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -460,14 +561,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                                 _brightness = value;
                               });
                               try {
-                                await ScreenBrightness().setScreenBrightness(value);
+                                await ScreenBrightness()
+                                    .setApplicationScreenBrightness(value);
                               } catch (_) {}
                             },
                           ),
                         ),
                       ),
                     );
-                  }
+                  },
                 ),
               ),
             ),
@@ -488,7 +590,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
               icon: const Icon(Icons.forward_10, color: Colors.white),
               onPressed: () {
                 final pos = player.state.position + const Duration(seconds: 10);
-                player.seek(pos > player.state.duration ? player.state.duration : pos);
+                player.seek(
+                  pos > player.state.duration ? player.state.duration : pos,
+                );
                 _triggerSeekAnimation('right');
               },
             ),
@@ -514,7 +618,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
             final screenWidth = MediaQuery.of(context).size.width;
             if (details.globalPosition.dx > screenWidth / 2) {
               final pos = player.state.position + const Duration(seconds: 10);
-              player.seek(pos > player.state.duration ? player.state.duration : pos);
+              player.seek(
+                pos > player.state.duration ? player.state.duration : pos,
+              );
               _triggerSeekAnimation('right');
             } else {
               final pos = player.state.position - const Duration(seconds: 10);
@@ -524,11 +630,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
           },
           onLongPressStart: (_) {
             player.setRate(2.0);
-            setState(() { _isFastForwarding = true; });
+            setState(() {
+              _isFastForwarding = true;
+            });
           },
           onLongPressEnd: (_) {
             player.setRate(1.0);
-            setState(() { _isFastForwarding = false; });
+            setState(() {
+              _isFastForwarding = false;
+            });
           },
           child: Stack(
             children: [
@@ -543,7 +653,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                     wordSpacing: 0.0,
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
-                    backgroundColor: Color(0xaa000000),
+                    backgroundColor: Color(0x66000000),
                   ),
                   textAlign: TextAlign.center,
                   padding: EdgeInsets.only(left: 24, right: 24, bottom: 24),
@@ -556,7 +666,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('2x Speed ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(
+                        '2x Speed ',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
                       Icon(Icons.fast_forward, color: Colors.white),
                     ],
                   ),
@@ -573,20 +690,32 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                       decoration: BoxDecoration(
                         color: Colors.black38,
                         borderRadius: BorderRadius.horizontal(
-                          left: _seekAnimationSide == 'right' ? const Radius.circular(150) : Radius.zero,
-                          right: _seekAnimationSide == 'left' ? const Radius.circular(150) : Radius.zero,
+                          left: _seekAnimationSide == 'right'
+                              ? const Radius.circular(150)
+                              : Radius.zero,
+                          right: _seekAnimationSide == 'left'
+                              ? const Radius.circular(150)
+                              : Radius.zero,
                         ),
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            _seekAnimationSide == 'right' ? Icons.fast_forward : Icons.fast_rewind,
+                            _seekAnimationSide == 'right'
+                                ? Icons.fast_forward
+                                : Icons.fast_rewind,
                             color: Colors.white,
                             size: 48,
                           ),
                           const SizedBox(height: 8),
-                          const Text('10 seconds', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          const Text(
+                            '10 seconds',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ],
                       ),
                     ),

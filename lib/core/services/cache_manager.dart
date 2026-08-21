@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CacheManager {
   static const String tableName = 'api_cache';
-  
+
   // Time-To-Live in hours
   static const int ttlHours = 1;
 
@@ -35,7 +36,7 @@ class CacheManager {
       return response['data'] as Map<String, dynamic>;
     } catch (e) {
       // On any Supabase error (e.g. offline, table not created), just return null to fallback to API
-      print('CacheManager get error: $e');
+      if (kDebugMode) debugPrint('CacheManager get error: $e');
       return null;
     }
   }
@@ -48,7 +49,7 @@ class CacheManager {
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (e) {
-      print('CacheManager set error: $e');
+      if (kDebugMode) debugPrint('CacheManager set error: $e');
     }
   }
 }

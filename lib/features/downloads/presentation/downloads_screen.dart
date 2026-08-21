@@ -17,106 +17,191 @@ class DownloadsScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Text('Downloads', style: AppTextStyles.heroTitle.copyWith(fontSize: 24)),
+        title: Text(
+          'Downloads',
+          style: AppTextStyles.heroTitle.copyWith(fontSize: 23),
+        ),
       ),
-      body: downloads.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.download_for_offline, size: 80, color: AppColors.border),
-                  const SizedBox(height: 16),
-                  Text('No downloads yet', style: AppTextStyles.sectionTitle),
-                  const SizedBox(height: 8),
-                  Text('Movies and episodes you download will appear here.', 
-                    style: AppTextStyles.body, textAlign: TextAlign.center),
-                ],
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.only(bottom: 120, top: 16),
-              itemCount: downloads.length,
-              itemBuilder: (context, index) {
-                final item = downloads[index];
-                
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    children: [
-                      // Thumbnail
-                      Container(
-                        width: 130,
-                        height: 74,
-                        decoration: BoxDecoration(
-                          color: AppColors.border,
-                          borderRadius: BorderRadius.circular(8),
-                          image: item.posterUrl != null ? DecorationImage(
-                            image: NetworkImage(item.posterUrl!),
-                            fit: BoxFit.cover,
-                          ) : null,
-                        ),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
+        child: downloads.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceRaised,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.border),
                       ),
-                      const SizedBox(width: 16),
-                      // Details
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      child: const Icon(
+                        Icons.download_for_offline_outlined,
+                        size: 32,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text('No downloads yet', style: AppTextStyles.sectionTitle),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Movies and episodes you download will appear here.',
+                      style: AppTextStyles.body,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.only(bottom: 40, top: 10),
+                itemCount: downloads.length,
+                itemBuilder: (context, index) {
+                  final item = downloads[index];
+
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 760),
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 6,
+                        ),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Row(
                           children: [
-                            Text(item.animeTitle, style: AppTextStyles.cardTitle.copyWith(color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
-                            const SizedBox(height: 4),
-                            Text('${item.episode.title} • Ep ${item.episode.episodeNumber}', style: AppTextStyles.caption),
-                            const SizedBox(height: 8),
-                            if (item.state == DownloadState.downloading) ...[
-                              LinearProgressIndicator(
-                                value: item.progress,
-                                backgroundColor: AppColors.border,
-                                color: AppColors.accentStart,
-                                minHeight: 4,
+                            // Thumbnail
+                            Container(
+                              width: 112,
+                              height: 68,
+                              decoration: BoxDecoration(
+                                color: AppColors.border,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.sm,
+                                ),
+                                image: item.posterUrl != null
+                                    ? DecorationImage(
+                                        image: NetworkImage(item.posterUrl!),
+                                        fit: BoxFit.cover,
+                                        filterQuality: FilterQuality.high,
+                                      )
+                                    : null,
                               ),
-                              const SizedBox(height: 4),
-                              Text('${(item.progress * 100).toInt()}%', style: AppTextStyles.caption.copyWith(fontSize: 10)),
-                            ] else if (item.state == DownloadState.completed) ...[
-                              Text('Downloaded', style: AppTextStyles.caption.copyWith(color: Colors.greenAccent)),
-                            ] else if (item.state == DownloadState.failed) ...[
-                              Text('Failed', style: AppTextStyles.caption.copyWith(color: Colors.redAccent)),
-                            ]
+                            ),
+                            const SizedBox(width: 16),
+                            // Details
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.animeTitle,
+                                    style: AppTextStyles.cardTitle.copyWith(
+                                      color: AppColors.textPrimary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${item.episode.title} • Ep ${item.episode.episodeNumber}',
+                                    style: AppTextStyles.caption,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (item.state ==
+                                      DownloadState.downloading) ...[
+                                    LinearProgressIndicator(
+                                      value: item.progress,
+                                      backgroundColor: AppColors.border,
+                                      color: AppColors.accentStart,
+                                      minHeight: 3,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${(item.progress * 100).toInt()}%',
+                                      style: AppTextStyles.caption.copyWith(
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ] else if (item.state ==
+                                      DownloadState.completed) ...[
+                                    Text(
+                                      'Downloaded',
+                                      style: AppTextStyles.caption.copyWith(
+                                        color: Colors.greenAccent,
+                                      ),
+                                    ),
+                                  ] else if (item.state ==
+                                      DownloadState.failed) ...[
+                                    Text(
+                                      'Failed',
+                                      style: AppTextStyles.caption.copyWith(
+                                        color: Colors.redAccent,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            // Action button
+                            IconButton(
+                              tooltip: item.state == DownloadState.completed
+                                  ? 'Play download'
+                                  : 'Cancel download',
+                              style: IconButton.styleFrom(
+                                backgroundColor: AppColors.surfaceSoft,
+                              ),
+                              icon: item.state == DownloadState.completed
+                                  ? const Icon(
+                                      Icons.play_circle_fill,
+                                      size: 36,
+                                      color: AppColors.textPrimary,
+                                    )
+                                  : const Icon(
+                                      Icons.close,
+                                      color: AppColors.textSecondary,
+                                    ),
+                              onPressed: () {
+                                if (item.state == DownloadState.completed) {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => VideoPlayerScreen(
+                                        animeTitle: item.animeTitle,
+                                        animeSlug: item.animeSlug,
+                                        episodeNumber:
+                                            item.episode.episodeNumber,
+                                        isLocal: true,
+                                        anime: Anime(
+                                          id: item.animeSlug,
+                                          title: item.animeTitle,
+                                          genre: '',
+                                          year: 0,
+                                          posterUrl: item.posterUrl,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  ref
+                                      .read(downloadItemsProvider.notifier)
+                                      .removeDownload(item.id);
+                                }
+                              },
+                            ),
                           ],
                         ),
                       ),
-                      // Action button
-                      IconButton(
-                        icon: item.state == DownloadState.completed 
-                            ? const Icon(Icons.play_circle_fill, size: 36, color: AppColors.textPrimary)
-                            : const Icon(Icons.close, color: AppColors.textSecondary),
-                        onPressed: () {
-                          if (item.state == DownloadState.completed) {
-                            Navigator.of(context).push(MaterialPageRoute(
-                              builder: (_) => VideoPlayerScreen(
-                                animeTitle: item.animeTitle,
-                                animeSlug: item.animeSlug,
-                                episodeNumber: item.episode.episodeNumber,
-                                isLocal: true,
-                                anime: Anime(
-                                  id: item.animeSlug,
-                                  title: item.animeTitle,
-                                  genre: '',
-                                  year: 0,
-                                  posterUrl: item.posterUrl,
-                                ),
-                              ),
-                            ));
-                          } else {
-                            ref.read(downloadItemsProvider.notifier).removeDownload(item.id);
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+                    ),
+                  );
+                },
+              ),
+      ),
     );
   }
 }

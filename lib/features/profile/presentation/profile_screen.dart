@@ -1,201 +1,290 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:luffytv/core/theme/app_colors.dart';
-import 'package:luffytv/core/widgets/bouncing_button.dart';
+import 'package:luffytv/core/theme/app_theme.dart';
+import 'package:luffytv/core/utils/responsive.dart';
 import 'downloads_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
+  void _comingSoon(BuildContext context, String feature) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$feature is coming soon.')));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final responsive = Responsive.of(context);
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Container(
+      body: DecoratedBox(
         decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
         child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: 120), // Leave room for nav bar
-            children: [
-              const SizedBox(height: 40),
-              // Single Profile Header
-              Center(
-                child: Column(
-                  children: [
-                    Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Container(
-                          width: 110,
-                          height: 110,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppColors.accentStart, width: 3),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.accentStart.withValues(alpha: 0.3),
-                                blurRadius: 20,
-                                spreadRadius: 5,
-                              )
-                            ],
-                            image: const DecorationImage(
-                              image: NetworkImage('https://i.pravatar.cc/150?img=11'),
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: BouncingButton(
-                            onTap: () {},
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: const BoxDecoration(
-                                color: AppColors.surface,
-                                shape: BoxShape.circle,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: ListView(
+                physics: const BouncingScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                  responsive.screenPadding,
+                  28,
+                  responsive.screenPadding,
+                  130,
+                ),
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'YOUR SPACE',
+                              style: AppTextStyles.label.copyWith(
+                                color: AppColors.accentEnd,
                               ),
-                              child: const Icon(Icons.edit, color: Colors.white, size: 18),
                             ),
-                          ),
-                        )
+                            const SizedBox(height: 5),
+                            Text('Profile', style: AppTextStyles.display),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'App settings',
+                        onPressed: () => _comingSoon(context, 'App settings'),
+                        style: IconButton.styleFrom(
+                          backgroundColor: AppColors.surfaceRaised,
+                          side: const BorderSide(color: AppColors.border),
+                        ),
+                        icon: const Icon(Icons.settings_outlined),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 26),
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface.withValues(alpha: .88),
+                      borderRadius: BorderRadius.circular(AppRadius.lg),
+                      border: Border.all(color: AppColors.border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: .25),
+                          blurRadius: 30,
+                          offset: const Offset(0, 16),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Monkey D. Luffy',
-                      style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Premium Member',
-                      style: TextStyle(color: AppColors.accentStart, fontSize: 14, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-              
-              // Settings Group
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
-                      ),
-                      child: Column(
-                        children: [
-                          _buildMenuTile(
-                            context: context,
-                            icon: Icons.person_outline_rounded,
-                            title: 'Account Settings',
-                            onTap: () {},
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 76,
+                          height: 76,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            gradient: AppColors.accentGradient,
+                            borderRadius: BorderRadius.circular(22),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.accentStart.withValues(
+                                  alpha: .25,
+                                ),
+                                blurRadius: 24,
+                              ),
+                            ],
                           ),
-                          Divider(color: Colors.white.withValues(alpha: 0.1), height: 1, indent: 64),
-                          _buildMenuTile(
-                            context: context,
-                            icon: Icons.download_rounded,
-                            title: 'Downloads',
-                            onTap: () {
-                              Navigator.of(context).push(MaterialPageRoute(builder: (context) => const DownloadsScreen()));
-                            },
+                          child: Image.asset(
+                            'assets/images/LuffyTVLogo.png',
+                            fit: BoxFit.contain,
                           ),
-                          Divider(color: Colors.white.withValues(alpha: 0.1), height: 1, indent: 64),
-                          _buildMenuTile(
-                            context: context,
-                            icon: Icons.history_rounded,
-                            title: 'Watch History',
-                            onTap: () {},
+                        ),
+                        const SizedBox(width: 17),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Luffy TV Viewer',
+                                style: AppTextStyles.sectionTitle,
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                'Local profile · your activity stays on this device',
+                                style: AppTextStyles.body,
+                              ),
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.success.withValues(
+                                    alpha: .1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.full,
+                                  ),
+                                  border: Border.all(
+                                    color: AppColors.success.withValues(
+                                      alpha: .25,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  'STREAM READY',
+                                  style: AppTextStyles.label.copyWith(
+                                    color: AppColors.success,
+                                    fontSize: 9,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          Divider(color: Colors.white.withValues(alpha: 0.1), height: 1, indent: 64),
-                          _buildMenuTile(
-                            context: context,
-                            icon: Icons.settings_outlined,
-                            title: 'App Settings',
-                            onTap: () {},
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Logout Group
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
-                      ),
-                      child: _buildMenuTile(
-                        context: context,
-                        icon: Icons.logout_rounded,
-                        title: 'Log Out',
-                        iconColor: Colors.redAccent,
-                        textColor: Colors.redAccent,
-                        onTap: () {},
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
+                  const SizedBox(height: 30),
+                  Text('WATCHING', style: AppTextStyles.label),
+                  const SizedBox(height: 10),
+                  _SettingsCard(
+                    children: [
+                      _SettingsTile(
+                        icon: Icons.download_for_offline_outlined,
+                        title: 'Downloads',
+                        subtitle: 'Watch offline and manage storage',
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const DownloadsScreen(),
+                          ),
+                        ),
+                      ),
+                      _SettingsTile(
+                        icon: Icons.history_rounded,
+                        title: 'Watch history',
+                        subtitle: 'Continue from where you stopped',
+                        onTap: () => _comingSoon(context, 'Watch history'),
+                      ),
+                      _SettingsTile(
+                        icon: Icons.subtitles_outlined,
+                        title: 'Playback & captions',
+                        subtitle: 'Quality, audio, and subtitle preferences',
+                        onTap: () =>
+                            _comingSoon(context, 'Playback preferences'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Text('APP', style: AppTextStyles.label),
+                  const SizedBox(height: 10),
+                  _SettingsCard(
+                    children: [
+                      _SettingsTile(
+                        icon: Icons.notifications_none_rounded,
+                        title: 'Notifications',
+                        subtitle: 'Episode and download updates',
+                        onTap: () => _comingSoon(context, 'Notifications'),
+                      ),
+                      _SettingsTile(
+                        icon: Icons.storage_outlined,
+                        title: 'Data & storage',
+                        subtitle: 'Cache, downloads, and streaming data',
+                        onTap: () => _comingSoon(context, 'Data and storage'),
+                      ),
+                      _SettingsTile(
+                        icon: Icons.help_outline_rounded,
+                        title: 'Help & feedback',
+                        subtitle: 'Get support or share an idea',
+                        onTap: () => _comingSoon(context, 'Help and feedback'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  Center(
+                    child: Text(
+                      'Luffy TV · Version 1.0.0',
+                      style: AppTextStyles.caption,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildMenuTile({
-    required BuildContext context,
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-    Color? iconColor,
-    Color? textColor,
-  }) {
-    return BouncingButton(
-      onTap: onTap,
-      child: Container(
-        color: Colors.transparent, // Ensures the whole row is clickable
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: (iconColor ?? Colors.white).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: iconColor ?? Colors.white, size: 24),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(color: textColor ?? Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: Colors.white.withValues(alpha: 0.3)),
+class _SettingsCard extends StatelessWidget {
+  final List<Widget> children;
+  const _SettingsCard({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          for (var index = 0; index < children.length; index++) ...[
+            children[index],
+            if (index < children.length - 1)
+              const Divider(height: 1, indent: 64),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _SettingsTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      minTileHeight: 72,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceSoft,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Icon(icon, color: AppColors.textSecondary, size: 20),
+      ),
+      title: Text(title, style: AppTextStyles.cardTitle),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 3),
+        child: Text(
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.caption,
         ),
       ),
+      trailing: const Icon(
+        Icons.chevron_right_rounded,
+        color: AppColors.textMuted,
+      ),
+      onTap: onTap,
     );
   }
 }

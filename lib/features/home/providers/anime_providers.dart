@@ -5,26 +5,12 @@ import '../data/models/anime.dart';
 import 'package:http/http.dart' as http;
 import '../data/repository/api_anime_repository.dart';
 
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:luffytv/core/services/cache_manager.dart';
-
 /// Swap MockAnimeRepository() for a real implementation here — this is
 /// the single line the rest of the app depends on.
 final animeRepositoryProvider = Provider<AnimeRepository>((ref) {
   final client = http.Client();
-  
-  CacheManager? cacheManager;
-  try {
-    cacheManager = CacheManager(supabase: Supabase.instance.client);
-  } catch (e) {
-    // Supabase not initialized, CacheManager will be null
-    print('Supabase not initialized, caching disabled.');
-  }
-
-  // Remember to dispose the client if this provider is ever disposed, 
-  // though typically this lives forever.
   ref.onDispose(() => client.close());
-  return ApiAnimeRepository(client: client, cacheManager: cacheManager);
+  return ApiAnimeRepository(client: client);
 });
 
 /// FutureProvider handles loading/error/data states automatically —
@@ -62,8 +48,15 @@ final allAnimeProvider = FutureProvider<List<Anime>>((ref) async {
   final newEps = await repo.fetchNewEpisodes();
   final recentlyCompleted = await repo.fetchRecentlyCompleted();
   final topMonth = await repo.fetchTopMonth();
-  
-  final all = [featured, ...editors, ...trending, ...newEps, ...recentlyCompleted, ...topMonth];
+
+  final all = [
+    featured,
+    ...editors,
+    ...trending,
+    ...newEps,
+    ...recentlyCompleted,
+    ...topMonth,
+  ];
   final map = {for (var a in all) a.id: a}; // deduplicate
   return map.values.toList();
 });
@@ -76,27 +69,35 @@ class SelectedCategoryNotifier extends Notifier<int> {
   int build() => 0;
   void setIndex(int index) => state = index;
 }
-final selectedCategoryProvider = NotifierProvider<SelectedCategoryNotifier, int>(SelectedCategoryNotifier.new);
+
+final selectedCategoryProvider =
+    NotifierProvider<SelectedCategoryNotifier, int>(
+      SelectedCategoryNotifier.new,
+    );
 
 class SelectedNavIndexNotifier extends Notifier<int> {
   @override
   int build() => 0;
   void setIndex(int index) => state = index;
 }
-final selectedNavIndexProvider = NotifierProvider<SelectedNavIndexNotifier, int>(SelectedNavIndexNotifier.new);
+
+final selectedNavIndexProvider =
+    NotifierProvider<SelectedNavIndexNotifier, int>(
+      SelectedNavIndexNotifier.new,
+    );
 
 const categories = [
-  'All', 
-  'Action', 
-  'Romance', 
-  'Comedy', 
-  'Fantasy', 
-  'Drama', 
-  'Sci-Fi', 
-  'Slice of Life', 
-  'Mecha', 
-  'Supernatural', 
-  'Sports', 
-  'Horror', 
-  'Mystery'
+  'All',
+  'Action',
+  'Romance',
+  'Comedy',
+  'Fantasy',
+  'Drama',
+  'Sci-Fi',
+  'Slice of Life',
+  'Mecha',
+  'Supernatural',
+  'Sports',
+  'Horror',
+  'Mystery',
 ];
