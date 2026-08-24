@@ -39,6 +39,15 @@ class HlsDownloaderService {
     }
   }
 
+  static Future<String> outputPathFor(String id) async {
+    final supportDir = await getApplicationSupportDirectory();
+    final downloadsDir = Directory('${supportDir.path}/downloads');
+    if (!await downloadsDir.exists()) {
+      await downloadsDir.create(recursive: true);
+    }
+    return '${downloadsDir.path}/$id.mp4';
+  }
+
   Stream<double> downloadEpisode(
     String id,
     String m3u8Url, {
@@ -46,8 +55,7 @@ class HlsDownloaderService {
   }) async* {
     yield 0.0;
 
-    final tempDir = await getTemporaryDirectory();
-    final outputPath = '${tempDir.path}/$id.mp4';
+    final outputPath = await outputPathFor(id);
     final notificationId = id.hashCode;
 
     // Check if already exists
@@ -80,16 +88,20 @@ class HlsDownloaderService {
       arguments.add('-headers');
       arguments.add('Referer: $referer\r\n');
     }
-    arguments.add('-f');
-    arguments.add('hls');
-    arguments.add('-allowed_segment_extensions');
-    arguments.add('ALL');
-    arguments.add('-extension_picky');
-    arguments.add('0');
+    final isHls = m3u8Url.toLowerCase().contains('.m3u8');
+    if (isHls) {
+      arguments.add('-allowed_segment_extensions');
+      arguments.add('ALL');
+      arguments.add('-extension_picky');
+      arguments.add('0');
+    }
     arguments.add('-i');
     arguments.add(m3u8Url);
     arguments.add('-c');
     arguments.add('copy');
+    arguments.add('-movflags');
+    arguments.add('+faststart');
+    arguments.add('-y');
     arguments.add(outputPath);
 
     final session = await FFmpegKit.executeWithArgumentsAsync(

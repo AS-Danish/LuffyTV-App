@@ -1,7 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
 import 'package:luffytv/core/services/hls_downloader_service.dart';
 import 'package:luffytv/features/home/data/models/episode.dart';
@@ -36,13 +36,22 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     final items = await loadStoredDownloads();
     if (items.isNotEmpty) {
       // Ensure anything that was 'downloading' when app closed is reset to 'failed' or 'pending'
-      final resetItems = items.map((item) {
+      final resetItems = <DownloadItem>[];
+      for (final item in items) {
         if (item.state == DownloadState.downloading) {
-          return item.copyWith(state: DownloadState.failed);
+          resetItems.add(item.copyWith(state: DownloadState.failed));
+          continue;
         }
-        return item;
-      }).toList();
+        if (item.state == DownloadState.completed &&
+            (item.localM3u8Path?.isEmpty != false ||
+                !await File(item.localM3u8Path!).exists())) {
+          resetItems.add(item.copyWith(state: DownloadState.failed));
+          continue;
+        }
+        resetItems.add(item);
+      }
       state = resetItems;
+      await _saveToPrefs();
     }
   }
 
@@ -102,8 +111,7 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
         _updateItem(id, (item) => item.copyWith(progress: progress));
       }
 
-      final tempDir = await getTemporaryDirectory();
-      final localPath = '${tempDir.path}/$id.mp4';
+      final localPath = await HlsDownloaderService.outputPathFor(id);
 
       _updateItem(
         id,
@@ -123,13 +131,22 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     _saveToPrefs();
   }
 
-  void removeDownload(String id) {
+  Future<void> removeDownload(String id) async {
+    final item = state.where((entry) => entry.id == id).firstOrNull;
     state = state.where((item) => item.id != id).toList();
-    _saveToPrefs();
+    await _saveToPrefs();
+    final path = item?.localM3u8Path;
+    if (path?.isNotEmpty == true) {
+      final file = File(path!);
+      if (await file.exists()) await file.delete();
+    }
   }
 
-  void cancelDownload(String id) {
-    ref.read(hlsDownloaderProvider).cancelDownload(id);
+  Future<void> cancelDownload(String id) async {
+    await ref.read(hlsDownloaderProvider).cancelDownload(id);
     _updateItem(id, (item) => item.copyWith(state: DownloadState.failed));
+    final path = await HlsDownloaderService.outputPathFor(id);
+    final file = File(path);
+    if (await file.exists()) await file.delete();
   }
 }

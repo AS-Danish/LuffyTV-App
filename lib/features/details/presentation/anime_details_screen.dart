@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
@@ -14,6 +15,8 @@ import 'package:luffytv/core/widgets/cached_artwork_image.dart';
 import 'package:luffytv/features/home/providers/anime_providers.dart';
 import 'package:http/http.dart' as http;
 import 'package:luffytv/features/home/data/models/episode.dart';
+import 'package:luffytv/features/home/data/models/watch_data.dart';
+import 'package:luffytv/core/utils/api_constants.dart';
 
 class AnimeDetailsScreen extends ConsumerStatefulWidget {
   final Anime anime;
@@ -67,65 +70,102 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
 
     try {
       final repo = ref.read(animeRepositoryProvider);
-      final watchData = await repo.fetchWatchData(anime.id, ep.episodeNumber);
-
-      final bestSource = watchData.sources.firstWhere(
-        (s) => s.type == 'sub' && s.m3u8 != null,
-        orElse: () => watchData.sources.first,
-      );
-
-      String masterUrl =
-          bestSource.proxyUrl ?? bestSource.m3u8 ?? bestSource.url;
-      final headers = <String, String>{};
-      if (bestSource.proxyUrl == null &&
-          bestSource.referer != null &&
-          bestSource.referer!.isNotEmpty) {
-        headers['Referer'] = bestSource.referer!;
-      }
-
-      final response = await http.get(Uri.parse(masterUrl), headers: headers);
-      final lines = response.body.split('\n');
-
-      List<Map<String, String>> qualities = [];
-
-      for (int i = 0; i < lines.length; i++) {
-        if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
-          final resMatch = RegExp(r'RESOLUTION=(\d+x\d+)').firstMatch(lines[i]);
-          final bwMatch = RegExp(r'BANDWIDTH=(\d+)').firstMatch(lines[i]);
-
-          final resolution = resMatch != null ? resMatch.group(1) : 'Unknown';
-
-          String sizeStr = '';
-          if (bwMatch != null) {
-            final bandwidth = int.parse(bwMatch.group(1)!);
-            // Assuming typical 24 mins (1440 seconds)
-            final sizeMb = (bandwidth / 8 * 1440) / 1024 / 1024;
-            sizeStr = ' (~${sizeMb.toStringAsFixed(1)} MB)';
+      WatchData? watchData;
+      Object? lastError;
+      for (var attempt = 0; attempt < 3; attempt++) {
+        try {
+          final candidate = await repo.fetchWatchData(
+            anime.id,
+            ep.episodeNumber,
+            forceRefresh: attempt > 0,
+          );
+          if (candidate.sources.any((source) => source.isPlayable)) {
+            watchData = candidate;
+            break;
           }
-
-          String formattedRes = resolution ?? 'Unknown';
-          if (formattedRes != 'Unknown' && formattedRes.contains('x')) {
-            formattedRes = '${formattedRes.split('x').last}p';
-          }
-          formattedRes += sizeStr;
-
-          if (i + 1 < lines.length) {
-            String variantUrl = lines[i + 1].trim();
-            if (!variantUrl.startsWith('http')) {
-              final uri = Uri.parse(masterUrl);
-              variantUrl = uri.resolve(variantUrl).toString();
-            }
-            qualities.add({'resolution': formattedRes, 'url': variantUrl});
-          }
+          lastError = Exception('No downloadable source was returned.');
+        } catch (error) {
+          lastError = error;
+        }
+        if (attempt < 2) {
+          await Future<void>.delayed(
+            Duration(milliseconds: attempt == 0 ? 350 : 900),
+          );
         }
       }
+      if (watchData == null) throw lastError ?? Exception('No source found.');
+
+      final sources =
+          watchData.sources.where((source) => source.isPlayable).toList()
+            ..sort((a, b) {
+              int score(VideoSource source) =>
+                  (source.type.toLowerCase() == 'sub' ? 4 : 0) +
+                  (source.proxyUrl?.trim().isNotEmpty == true ? 2 : 0) +
+                  (source.m3u8?.trim().isNotEmpty == true ? 1 : 0);
+              return score(b).compareTo(score(a));
+            });
+
+      VideoSource? bestSource;
+      String? masterUrl;
+      List<Map<String, String>> qualities = [];
+      for (final source in sources) {
+        final playable = source.playableUrl;
+        if (playable == null) continue;
+        final candidateUrl = _absoluteDownloadUrl(playable);
+        final isHls =
+            source.m3u8?.trim().isNotEmpty == true ||
+            candidateUrl.toLowerCase().contains('.m3u8');
+        if (!isHls) {
+          bestSource = source;
+          masterUrl = candidateUrl;
+          break;
+        }
+
+        try {
+          final headers = <String, String>{};
+          if (source.proxyUrl?.trim().isEmpty != false &&
+              source.referer?.isNotEmpty == true) {
+            headers['Referer'] = source.referer!;
+          }
+          final response = await http
+              .get(Uri.parse(candidateUrl), headers: headers)
+              .timeout(const Duration(seconds: 12));
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            throw Exception('Playlist returned ${response.statusCode}.');
+          }
+          final variantBase = source.m3u8?.trim().isNotEmpty == true
+              ? source.m3u8!.trim()
+              : candidateUrl;
+          qualities = _parseDownloadQualities(
+            response.body,
+            variantBase,
+            ep.durationMinutes,
+          );
+          bestSource = source;
+          masterUrl = candidateUrl;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (bestSource == null || masterUrl == null) {
+        throw lastError ?? Exception('Every download source failed.');
+      }
+      final selectedSource = bestSource;
+      final selectedUrl = masterUrl;
 
       if (context.mounted) Navigator.pop(context); // pop loading
 
       if (qualities.isEmpty) {
         ref
             .read(downloadItemsProvider.notifier)
-            .startDownload(anime, ep, masterUrl, referer: bestSource.referer);
+            .startDownload(
+              anime,
+              ep,
+              selectedUrl,
+              referer: selectedSource.referer,
+            );
         return;
       }
 
@@ -170,7 +210,7 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                               anime,
                               ep,
                               q['url']!,
-                              referer: bestSource.referer,
+                              referer: selectedSource.referer,
                             );
                       },
                     ),
@@ -182,18 +222,71 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
         );
       }
     } catch (e) {
+      if (kDebugMode) debugPrint('Download quality resolution failed: $e');
       if (context.mounted) {
         Navigator.pop(context); // pop loading
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'Failed to load qualities',
+              'Could not prepare this download. Please retry or choose another episode.\n${e.toString().replaceFirst('Exception: ', '')}',
               style: TextStyle(color: Colors.white),
             ),
           ),
         );
       }
     }
+  }
+
+  String _absoluteDownloadUrl(String value) {
+    final trimmed = value.trim();
+    if (trimmed.startsWith('/')) return '${ApiConstants.baseUrl}$trimmed';
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null || !uri.hasScheme) {
+      throw Exception('The server returned an invalid download URL.');
+    }
+    return trimmed;
+  }
+
+  List<Map<String, String>> _parseDownloadQualities(
+    String playlist,
+    String baseUrl,
+    int durationMinutes,
+  ) {
+    final lines = playlist.split(RegExp(r'\r?\n'));
+    final qualities = <Map<String, String>>[];
+    final seen = <String>{};
+    for (var index = 0; index < lines.length; index++) {
+      final metadata = lines[index].trim();
+      if (!metadata.startsWith('#EXT-X-STREAM-INF')) continue;
+      var urlIndex = index + 1;
+      while (urlIndex < lines.length &&
+          (lines[urlIndex].trim().isEmpty ||
+              lines[urlIndex].trim().startsWith('#'))) {
+        urlIndex++;
+      }
+      if (urlIndex >= lines.length) continue;
+      var variantUrl = lines[urlIndex].trim();
+      if (!variantUrl.startsWith('http')) {
+        variantUrl = Uri.parse(baseUrl).resolve(variantUrl).toString();
+      }
+      if (!seen.add(variantUrl)) continue;
+
+      final resolution = RegExp(r'RESOLUTION=(\d+)x(\d+)').firstMatch(metadata);
+      final bandwidth = RegExp(
+        r'(?:AVERAGE-)?BANDWIDTH=(\d+)',
+      ).firstMatch(metadata);
+      var label = resolution == null
+          ? 'Auto quality'
+          : '${resolution.group(2)}p';
+      if (bandwidth != null) {
+        final bitsPerSecond = int.tryParse(bandwidth.group(1)!) ?? 0;
+        final seconds = (durationMinutes > 0 ? durationMinutes : 24) * 60;
+        final sizeMb = bitsPerSecond / 8 * seconds / 1024 / 1024;
+        if (sizeMb > 0) label += ' (~${sizeMb.toStringAsFixed(0)} MB)';
+      }
+      qualities.add({'resolution': label, 'url': variantUrl});
+    }
+    return qualities;
   }
 
   @override
