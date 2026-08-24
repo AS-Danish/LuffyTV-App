@@ -51,11 +51,14 @@ class WatchProgress {
     Map<String, EpisodeProgress> parsedEpisodes = {};
     if (epMap != null) {
       epMap.forEach((key, value) {
-        parsedEpisodes[key] = EpisodeProgress.fromJson(Map<String, dynamic>.from(value as Map));
+        parsedEpisodes[key] = EpisodeProgress.fromJson(
+          Map<String, dynamic>.from(value as Map),
+        );
       });
     } else {
       // Backwards compatibility for old format
-      if (json['lastWatchedEpisode'] != null && json['positionSeconds'] != null) {
+      if (json['lastWatchedEpisode'] != null &&
+          json['positionSeconds'] != null) {
         final epNum = json['lastWatchedEpisode'].toString();
         parsedEpisodes[epNum] = EpisodeProgress(
           json['positionSeconds'] as int,
@@ -78,12 +81,14 @@ class LocalDbService {
   static const String _progressBoxName = 'watch_progress';
   static const String _myListBoxName = 'my_list';
   static const String _recentSearchesBoxName = 'recent_searches';
+  static const String _artworkBoxName = 'artwork_metadata';
 
   static Future<void> init() async {
     await Hive.initFlutter();
     await Hive.openBox(_progressBoxName);
     await Hive.openBox(_myListBoxName);
     await Hive.openBox<List<String>>(_recentSearchesBoxName);
+    await Hive.openBox<String>(_artworkBoxName);
   }
 
   // --- Watch Progress ---
@@ -96,17 +101,22 @@ class LocalDbService {
     required Duration duration,
   }) async {
     final box = Hive.box(_progressBoxName);
-    
+
     // Retrieve existing progress or create new episodes map
     Map<String, EpisodeProgress> episodes = {};
     final existingData = box.get(animeSlug);
     if (existingData != null) {
-      final existingProgress = WatchProgress.fromJson(jsonDecode(existingData as String));
+      final existingProgress = WatchProgress.fromJson(
+        jsonDecode(existingData as String),
+      );
       episodes = Map.from(existingProgress.episodes);
     }
 
     // Update the specific episode
-    episodes[episodeNumber.toString()] = EpisodeProgress(position.inSeconds, duration.inSeconds);
+    episodes[episodeNumber.toString()] = EpisodeProgress(
+      position.inSeconds,
+      duration.inSeconds,
+    );
 
     final progress = WatchProgress(
       animeSlug: animeSlug,
@@ -122,7 +132,9 @@ class LocalDbService {
     final box = Hive.box(_progressBoxName);
     final data = box.get(animeSlug);
     if (data != null) {
-      return WatchProgress.fromJson(jsonDecode(data as String));
+      return _withCachedProgress(
+        WatchProgress.fromJson(jsonDecode(data as String)),
+      );
     }
     return null;
   }
@@ -133,7 +145,11 @@ class LocalDbService {
     for (var key in box.keys) {
       final data = box.get(key);
       if (data != null) {
-        list.add(WatchProgress.fromJson(jsonDecode(data as String)));
+        list.add(
+          _withCachedProgress(
+            WatchProgress.fromJson(jsonDecode(data as String)),
+          ),
+        );
       }
     }
     // Sort by most recently updated
@@ -141,10 +157,55 @@ class LocalDbService {
     return list;
   }
 
+  static Future<void> clearWatchHistory() async {
+    await Hive.box(_progressBoxName).clear();
+  }
+
   // --- My List ---
+
+  static String _artworkKey(String title) =>
+      title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+
+  static String? getCachedArtworkUrl(String title) {
+    if (!Hive.isBoxOpen(_artworkBoxName)) return null;
+    final url = Hive.box<String>(_artworkBoxName).get(_artworkKey(title));
+    return url?.trim().isNotEmpty == true ? url : null;
+  }
+
+  static Future<void> cacheArtworkUrl(String title, String url) async {
+    if (!Hive.isBoxOpen(_artworkBoxName) || url.trim().isEmpty) return;
+    await Hive.box<String>(_artworkBoxName).put(_artworkKey(title), url.trim());
+  }
+
+  static Anime _withCachedArtwork(Anime anime) {
+    final cachedUrl = getCachedArtworkUrl(anime.title);
+    if (cachedUrl == null || cachedUrl == anime.posterUrl) return anime;
+    return anime.copyWith(
+      posterUrl: cachedUrl,
+      posterPreviewUrl: anime.posterPreviewUrl ?? anime.posterUrl,
+    );
+  }
+
+  static WatchProgress _withCachedProgress(WatchProgress progress) {
+    final anime = _withCachedArtwork(progress.anime);
+    if (identical(anime, progress.anime)) return progress;
+    return WatchProgress(
+      animeSlug: progress.animeSlug,
+      anime: anime,
+      lastWatchedEpisode: progress.lastWatchedEpisode,
+      updatedAt: progress.updatedAt,
+      episodes: progress.episodes,
+    );
+  }
 
   static Future<void> addToMyList(Anime anime) async {
     final box = Hive.box(_myListBoxName);
+    await box.put(anime.id, jsonEncode(_withCachedArtwork(anime).toJson()));
+  }
+
+  static Future<void> updateMyListArtwork(Anime anime) async {
+    final box = Hive.box(_myListBoxName);
+    if (!box.containsKey(anime.id)) return;
     await box.put(anime.id, jsonEncode(anime.toJson()));
   }
 
@@ -164,7 +225,9 @@ class LocalDbService {
     for (var key in box.keys) {
       final data = box.get(key);
       if (data != null) {
-        list.add(Anime.fromJson(jsonDecode(data as String)));
+        list.add(
+          _withCachedArtwork(Anime.fromJson(jsonDecode(data as String))),
+        );
       }
     }
     return list.reversed.toList(); // Newest first
@@ -174,17 +237,19 @@ class LocalDbService {
 
   static Future<void> saveSearchQuery(String query) async {
     final box = Hive.box<List<String>>(_recentSearchesBoxName);
-    List<String> searches = List.from(box.get('queries', defaultValue: <String>[])!);
-    
+    List<String> searches = List.from(
+      box.get('queries', defaultValue: <String>[])!,
+    );
+
     // Remove if already exists to move it to the top
     searches.remove(query);
     searches.insert(0, query);
-    
+
     // Keep only the last 10 searches
     if (searches.length > 10) {
       searches = searches.sublist(0, 10);
     }
-    
+
     await box.put('queries', searches);
   }
 

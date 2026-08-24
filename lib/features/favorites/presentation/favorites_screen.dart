@@ -6,13 +6,53 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/core/utils/responsive.dart';
 import 'package:luffytv/core/widgets/poster_card.dart';
+import 'package:luffytv/features/home/data/models/anime.dart';
 import 'package:luffytv/features/home/providers/anime_providers.dart';
 
-class FavoritesScreen extends ConsumerWidget {
+class FavoritesScreen extends ConsumerStatefulWidget {
   const FavoritesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FavoritesScreen> createState() => _FavoritesScreenState();
+}
+
+class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
+  String? _lastArtworkSignature;
+  bool _artworkUpgradeRunning = false;
+
+  void _upgradeSavedArtwork(List<Anime> favorites) {
+    if (favorites.isEmpty || _artworkUpgradeRunning) return;
+    final signature = favorites
+        .map((anime) => '${anime.id}:${anime.posterUrl}')
+        .join('|');
+    if (_lastArtworkSignature == signature) return;
+    _lastArtworkSignature = signature;
+    _artworkUpgradeRunning = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        if (!mounted) return;
+        final upgraded = await ref
+            .read(animeRepositoryProvider)
+            .upgradeArtwork(favorites);
+        await Future.wait(
+          upgraded.map((anime) async {
+            final original = favorites.firstWhere(
+              (item) => item.id == anime.id,
+            );
+            if (anime.posterUrl != original.posterUrl) {
+              await LocalDbService.updateMyListArtwork(anime);
+            }
+          }),
+        );
+      } finally {
+        _artworkUpgradeRunning = false;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final responsive = Responsive.of(context);
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -23,6 +63,7 @@ class FavoritesScreen extends ConsumerWidget {
             valueListenable: Hive.box('my_list').listenable(),
             builder: (context, box, _) {
               final favorites = LocalDbService.getMyList();
+              _upgradeSavedArtwork(favorites);
               return CustomScrollView(
                 physics: const BouncingScrollPhysics(),
                 slivers: [

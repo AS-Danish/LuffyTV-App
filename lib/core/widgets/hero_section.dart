@@ -6,6 +6,7 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/core/utils/responsive.dart';
 import 'package:luffytv/core/widgets/bouncing_button.dart';
+import 'package:luffytv/core/widgets/cached_artwork_image.dart';
 import 'package:luffytv/features/details/presentation/anime_details_screen.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
 import 'package:luffytv/features/home/providers/anime_providers.dart';
@@ -141,12 +142,11 @@ class _HeroCard extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               if (anime.posterUrl != null)
-                Image.network(
-                  anime.posterUrl!,
+                CachedArtworkImage(
+                  imageUrl: anime.posterUrl!,
+                  previewUrl: anime.posterPreviewUrl,
                   fit: BoxFit.cover,
                   alignment: Alignment.topCenter,
-                  filterQuality: FilterQuality.high,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
                 ),
               const DecoratedBox(
                 decoration: BoxDecoration(

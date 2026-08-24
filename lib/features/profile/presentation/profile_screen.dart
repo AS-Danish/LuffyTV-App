@@ -3,15 +3,14 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/core/utils/responsive.dart';
 import 'downloads_screen.dart';
+import 'profile_pages.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
-  void _comingSoon(BuildContext context, String feature) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$feature is coming soon.')));
-  }
+  void _open(BuildContext context, Widget page) =>
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +51,8 @@ class ProfileScreen extends StatelessWidget {
                       ),
                       IconButton(
                         tooltip: 'App settings',
-                        onPressed: () => _comingSoon(context, 'App settings'),
+                        onPressed: () =>
+                            _open(context, const AppSettingsScreen()),
                         style: IconButton.styleFrom(
                           backgroundColor: AppColors.surfaceRaised,
                           side: const BorderSide(color: AppColors.border),
@@ -165,14 +165,14 @@ class ProfileScreen extends StatelessWidget {
                         icon: Icons.history_rounded,
                         title: 'Watch history',
                         subtitle: 'Continue from where you stopped',
-                        onTap: () => _comingSoon(context, 'Watch history'),
+                        onTap: () => _open(context, const WatchHistoryScreen()),
                       ),
                       _SettingsTile(
                         icon: Icons.subtitles_outlined,
                         title: 'Playback & captions',
                         subtitle: 'Quality, audio, and subtitle preferences',
                         onTap: () =>
-                            _comingSoon(context, 'Playback preferences'),
+                            _open(context, const PlaybackSettingsScreen()),
                       ),
                     ],
                   ),
@@ -185,27 +185,36 @@ class ProfileScreen extends StatelessWidget {
                         icon: Icons.notifications_none_rounded,
                         title: 'Notifications',
                         subtitle: 'Episode and download updates',
-                        onTap: () => _comingSoon(context, 'Notifications'),
+                        onTap: () =>
+                            _open(context, const NotificationSettingsScreen()),
                       ),
                       _SettingsTile(
                         icon: Icons.storage_outlined,
                         title: 'Data & storage',
                         subtitle: 'Cache, downloads, and streaming data',
-                        onTap: () => _comingSoon(context, 'Data and storage'),
+                        onTap: () => _open(context, const DataStorageScreen()),
                       ),
                       _SettingsTile(
                         icon: Icons.help_outline_rounded,
                         title: 'Help & feedback',
                         subtitle: 'Get support or share an idea',
-                        onTap: () => _comingSoon(context, 'Help and feedback'),
+                        onTap: () => _open(context, const HelpFeedbackScreen()),
                       ),
                     ],
                   ),
                   const SizedBox(height: 22),
                   Center(
-                    child: Text(
-                      'Luffy TV · Version 1.0.0',
-                      style: AppTextStyles.caption,
+                    child: FutureBuilder<PackageInfo>(
+                      future: PackageInfo.fromPlatform(),
+                      builder: (context, snapshot) {
+                        final info = snapshot.data;
+                        return Text(
+                          info == null
+                              ? 'Luffy TV'
+                              : 'Luffy TV · Version ${info.version} (${info.buildNumber})',
+                          style: AppTextStyles.caption,
+                        );
+                      },
                     ),
                   ),
                 ],

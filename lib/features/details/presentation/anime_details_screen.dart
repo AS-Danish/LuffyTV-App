@@ -10,6 +10,7 @@ import 'package:luffytv/features/player/presentation/video_player_screen.dart';
 import 'package:luffytv/core/services/local_db_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:luffytv/core/widgets/poster_card.dart';
+import 'package:luffytv/core/widgets/cached_artwork_image.dart';
 import 'package:luffytv/features/home/providers/anime_providers.dart';
 import 'package:http/http.dart' as http;
 import 'package:luffytv/features/home/data/models/episode.dart';
@@ -242,12 +243,12 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                 fit: StackFit.expand,
                 children: [
                   if (widget.anime.posterUrl != null)
-                    Image.network(
-                      widget.anime.posterUrl!,
+                    CachedArtworkImage(
+                      imageUrl: widget.anime.posterUrl!,
+                      previewUrl: widget.anime.posterPreviewUrl,
                       fit: BoxFit.cover,
                       alignment: Alignment.topCenter,
-                      filterQuality: FilterQuality.high,
-                      errorBuilder: (_, _, _) =>
+                      fallbackBuilder: (_) =>
                           Container(color: AppColors.cardGradients[0][0]),
                     )
                   else
@@ -612,29 +613,32 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                             horizontal: 20,
                             vertical: 8,
                           ),
-                          leading: Container(
-                            width: 120,
-                            height: 70,
-                            decoration: BoxDecoration(
-                              color: AppColors.border,
-                              borderRadius: BorderRadius.circular(AppRadius.sm),
-                              image: widget.anime.posterUrl != null
-                                  ? DecorationImage(
-                                      image: NetworkImage(
-                                        widget.anime.posterUrl!,
-                                      ),
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                            child: SizedBox(
+                              width: 120,
+                              height: 70,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                alignment: Alignment.center,
+                                children: [
+                                  ColoredBox(color: AppColors.border),
+                                  if (widget.anime.posterUrl != null)
+                                    CachedArtworkImage(
+                                      imageUrl: widget.anime.posterUrl!,
+                                      previewUrl: widget.anime.posterPreviewUrl,
                                       fit: BoxFit.cover,
-                                      colorFilter: ColorFilter.mode(
-                                        Colors.black.withValues(alpha: 0.4),
-                                        BlendMode.darken,
-                                      ),
-                                    )
-                                  : null,
-                            ),
-                            child: const Icon(
-                              Icons.play_circle_outline,
-                              color: AppColors.textPrimary,
-                              size: 32,
+                                    ),
+                                  ColoredBox(
+                                    color: Colors.black.withValues(alpha: 0.4),
+                                  ),
+                                  const Icon(
+                                    Icons.play_circle_outline,
+                                    color: AppColors.textPrimary,
+                                    size: 32,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                           title: Text(

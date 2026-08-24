@@ -5,6 +5,7 @@ import 'package:luffytv/core/theme/app_theme.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
 import 'package:luffytv/features/details/presentation/anime_details_screen.dart';
 import 'package:luffytv/core/widgets/bouncing_button.dart';
+import 'package:luffytv/core/widgets/cached_artwork_image.dart';
 import 'package:luffytv/core/services/local_db_service.dart';
 import 'package:luffytv/features/home/providers/anime_providers.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -94,23 +95,11 @@ class PosterCard extends ConsumerWidget {
                   ),
                 ),
                 if (anime.posterUrl != null)
-                  Image.network(
-                    anime.posterUrl!,
+                  CachedArtworkImage(
+                    imageUrl: anime.posterUrl!,
+                    previewUrl: anime.posterPreviewUrl,
                     fit: BoxFit.cover,
-                    filterQuality: FilterQuality.high,
-                    cacheWidth: (width * MediaQuery.devicePixelRatioOf(context))
-                        .round(),
-                    frameBuilder:
-                        (context, child, frame, wasSynchronouslyLoaded) =>
-                            AnimatedOpacity(
-                              opacity: wasSynchronouslyLoaded || frame != null
-                                  ? 1
-                                  : 0,
-                              duration: const Duration(milliseconds: 280),
-                              curve: Curves.easeOut,
-                              child: child,
-                            ),
-                    errorBuilder: (_, _, _) => Center(
+                    fallbackBuilder: (_) => Center(
                       child: Icon(
                         Icons.movie_creation_outlined,
                         color: Colors.white.withValues(alpha: .35),

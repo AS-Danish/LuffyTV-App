@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/theme/app_theme.dart';
+import 'package:luffytv/core/widgets/cached_artwork_image.dart';
 import 'package:luffytv/features/downloads/providers/download_providers.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
@@ -77,19 +78,16 @@ class DownloadsScreen extends ConsumerWidget {
                         child: Row(
                           children: [
                             // Thumbnail
-                            Container(
-                              width: 112,
-                              height: 68,
-                              decoration: BoxDecoration(
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(AppRadius.sm),
+                              child: Container(
+                                width: 112,
+                                height: 68,
                                 color: AppColors.border,
-                                borderRadius: BorderRadius.circular(
-                                  AppRadius.sm,
-                                ),
-                                image: item.posterUrl != null
-                                    ? DecorationImage(
-                                        image: NetworkImage(item.posterUrl!),
+                                child: item.posterUrl != null
+                                    ? CachedArtworkImage(
+                                        imageUrl: item.posterUrl!,
                                         fit: BoxFit.cover,
-                                        filterQuality: FilterQuality.high,
                                       )
                                     : null,
                               ),

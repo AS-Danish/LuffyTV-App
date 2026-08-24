@@ -14,6 +14,7 @@ import 'package:luffytv/features/home/providers/anime_providers.dart';
 import 'package:luffytv/core/services/local_db_service.dart';
 import 'package:luffytv/features/downloads/providers/download_providers.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../home/data/models/anime.dart';
 
@@ -52,6 +53,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   String? _seekAnimationSide;
   Timer? _seekAnimationTimer;
   Timer? _progressSaveTimer;
+  StreamSubscription<String>? _playerErrorSubscription;
+  bool _sourceFallbackInProgress = false;
+  bool _playingLocalFile = false;
+  bool _subtitlesEnabled = true;
 
   @override
   void initState() {
@@ -65,6 +70,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
     player = Player();
     controller = VideoController(player);
+    _playerErrorSubscription = player.stream.error.listen(_handlePlaybackError);
 
     _initPlayer();
     _initBrightness();
@@ -98,6 +104,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     } catch (_) {}
   }
 
+  Future<void> _loadPlaybackPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    _subtitlesEnabled = prefs.getBool('playback_subtitles') ?? true;
+  }
+
   void _triggerSeekAnimation(String side) {
     setState(() {
       _seekAnimationSide = side;
@@ -112,9 +123,140 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     });
   }
 
-  Future<void> _initPlayer() async {
+  List<VideoSource> _playableSources(WatchData watchData) {
+    final sources = watchData.sources
+        .where((source) => source.isPlayable)
+        .toList();
+    sources.sort((a, b) {
+      final aScore =
+          (a.type.toLowerCase() == 'sub' ? 2 : 0) +
+          (a.proxyUrl?.trim().isNotEmpty == true ? 1 : 0);
+      final bScore =
+          (b.type.toLowerCase() == 'sub' ? 2 : 0) +
+          (b.proxyUrl?.trim().isNotEmpty == true ? 1 : 0);
+      return bScore.compareTo(aScore);
+    });
+    return sources;
+  }
+
+  List<VideoTrack> _captionTracks(VideoSource source) =>
+      source.tracks.where((track) {
+        final kind = track.kind.toLowerCase();
+        return kind == 'captions' || kind == 'subtitles';
+      }).toList();
+
+  String _absoluteApiUrl(String url) {
+    final value = url.trim();
+    if (value.startsWith('/')) return '${ApiConstants.baseUrl}$value';
+    return value;
+  }
+
+  Future<WatchData> _fetchPlayableWatchData({bool forceRefresh = false}) async {
+    final repo = ref.read(animeRepositoryProvider);
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final watchData = await repo.fetchWatchData(
+          widget.animeSlug,
+          widget.episodeNumber,
+          forceRefresh: forceRefresh || attempt > 0,
+        );
+        if (_playableSources(watchData).isNotEmpty) return watchData;
+        lastError = Exception('The API returned an empty source list.');
+      } catch (error) {
+        lastError = error;
+      }
+      if (attempt < 2) {
+        await Future<void>.delayed(
+          Duration(milliseconds: attempt == 0 ? 350 : 900),
+        );
+      }
+    }
+    if (kDebugMode) debugPrint('Source resolution failed: $lastError');
+    throw Exception(
+      'No playable video source is available right now. Please retry.',
+    );
+  }
+
+  Future<VideoSource> _playFirstAvailable(
+    Iterable<VideoSource> sources, {
+    VideoSource? exclude,
+  }) async {
+    Object? lastError;
+    for (final source in sources) {
+      if (identical(source, exclude)) continue;
+      try {
+        await _playSource(source);
+        return source;
+      } catch (error) {
+        lastError = error;
+        if (kDebugMode) {
+          debugPrint('Source ${source.server} failed: $error');
+        }
+      }
+    }
+    throw Exception(lastError ?? 'All resolved video sources failed.');
+  }
+
+  Future<void> _handlePlaybackError(String message) async {
+    if (!mounted ||
+        widget.isLocal ||
+        _playingLocalFile ||
+        _isLoading ||
+        _sourceFallbackInProgress ||
+        _watchData == null) {
+      return;
+    }
+    _sourceFallbackInProgress = true;
+    _savedPosition = player.state.position;
     try {
-      final repo = ref.read(animeRepositoryProvider);
+      final alternatives = _playableSources(_watchData!);
+      try {
+        await _playFirstAvailable(alternatives, exclude: _currentSource);
+      } catch (_) {
+        final refreshed = await _fetchPlayableWatchData(forceRefresh: true);
+        _watchData = refreshed;
+        await _playFirstAvailable(
+          _playableSources(refreshed),
+          exclude: _currentSource,
+        );
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Switched to a working video server.')),
+        );
+      }
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Automatic source fallback failed: $message / $error');
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Playback was interrupted. Tap retry if it continues.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      _sourceFallbackInProgress = false;
+    }
+  }
+
+  Future<void> _retryPlayer() async {
+    if (_isLoading) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    await player.stop();
+    await _initPlayer(forceRefresh: true);
+  }
+
+  Future<void> _initPlayer({bool forceRefresh = false}) async {
+    try {
+      await _loadPlaybackPreferences();
       final downloadId = '${widget.animeSlug}_${widget.episodeNumber}';
       final downloads = ref.read(downloadItemsProvider);
       final localItem = downloads
@@ -125,6 +267,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
       // If the file is downloaded (or forced local), play the local file
       if (widget.isLocal || localItem != null) {
+        _playingLocalFile = true;
         if (localItem == null || localItem.localM3u8Path == null) {
           throw Exception('Local file not found.');
         }
@@ -147,35 +290,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
         // Fetch watch data in background to enable subtitles and settings for local files
         try {
-          final watchData = await repo.fetchWatchData(
-            widget.animeSlug,
-            widget.episodeNumber,
+          final watchData = await _fetchPlayableWatchData(
+            forceRefresh: forceRefresh,
           );
           _watchData = watchData;
-          VideoSource? bestSource;
-          try {
-            bestSource = watchData.sources.firstWhere(
-              (s) => s.type == 'sub' && s.m3u8 != null,
-            );
-          } catch (_) {
-            if (watchData.sources.isNotEmpty) {
-              bestSource = watchData.sources.first;
-            }
-          }
+          final playableSources = _playableSources(watchData);
+          final bestSource = playableSources.firstOrNull;
           if (bestSource != null) {
             _currentSource = bestSource;
-            final captions = bestSource.tracks
-                .where((t) => t.kind == 'captions')
-                .toList();
-            if (captions.isNotEmpty) {
+            final captions = _captionTracks(bestSource);
+            if (_subtitlesEnabled && captions.isNotEmpty) {
               final firstCaption = captions.first;
-              String subUrl = firstCaption.proxyUrl ?? firstCaption.file;
-              if (subUrl.startsWith('/api')) {
-                subUrl = "${ApiConstants.baseUrl}$subUrl";
-              }
-              if (subUrl.startsWith('/')) {
-                subUrl = '${ApiConstants.baseUrl}$subUrl';
-              }
+              final subUrl = _absoluteApiUrl(
+                firstCaption.proxyUrl ?? firstCaption.file,
+              );
               player.setSubtitleTrack(
                 SubtitleTrack.uri(
                   subUrl,
@@ -188,33 +316,16 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
           }
         } catch (_) {}
 
-        setState(() {
-          _isLoading = false;
-        });
+        if (mounted) setState(() => _isLoading = false);
         return;
       }
 
       // Otherwise fetch from API and stream
-      final watchData = await repo.fetchWatchData(
-        widget.animeSlug,
-        widget.episodeNumber,
+      _playingLocalFile = false;
+      final watchData = await _fetchPlayableWatchData(
+        forceRefresh: forceRefresh,
       );
       _watchData = watchData;
-
-      VideoSource? bestSource;
-      try {
-        bestSource = watchData.sources.firstWhere(
-          (s) => s.type == 'sub' && s.m3u8 != null,
-        );
-      } catch (_) {
-        if (watchData.sources.isNotEmpty) {
-          bestSource = watchData.sources.first;
-        }
-      }
-
-      if (bestSource == null) {
-        throw Exception('No playable video sources found');
-      }
 
       // Check if we have saved progress to resume from
       final savedProgress = LocalDbService.getProgress(widget.animeSlug);
@@ -226,28 +337,26 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         }
       }
 
-      await _playSource(bestSource);
+      await _playFirstAvailable(_playableSources(watchData));
 
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) setState(() => _isLoading = false);
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = e.toString().replaceFirst('Exception: ', '');
+          _isLoading = false;
+        });
+      }
     }
   }
 
   Future<void> _playSource(VideoSource source) async {
     _currentSource = source;
-    String url = source.proxyUrl ?? source.m3u8 ?? source.url;
-    if (url.startsWith('/api')) {
-      url = "${ApiConstants.baseUrl}$url";
+    final playableUrl = source.playableUrl;
+    if (playableUrl == null) {
+      throw Exception('Source ${source.server} has no playable URL.');
     }
-    if (url.startsWith('/')) {
-      url = '${ApiConstants.baseUrl}$url';
-    }
+    final url = _absoluteApiUrl(playableUrl);
 
     final Map<String, String> headers = {};
     if (source.referer != null) {
@@ -265,17 +374,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       await player.seek(_savedPosition!);
     }
 
-    player.play();
+    await player.play();
 
     // Default to the first available subtitle track if any exist
-    final captions = source.tracks.where((t) => t.kind == 'captions').toList();
-    if (captions.isNotEmpty) {
+    final captions = _captionTracks(source);
+    if (_subtitlesEnabled && captions.isNotEmpty) {
       final firstCaption = captions.first;
-      String subUrl = firstCaption.proxyUrl ?? firstCaption.file;
-      if (subUrl.startsWith('/api')) {
-        subUrl = "${ApiConstants.baseUrl}$subUrl";
-      }
-      if (subUrl.startsWith('/')) subUrl = '${ApiConstants.baseUrl}$subUrl';
+      final subUrl = _absoluteApiUrl(
+        firstCaption.proxyUrl ?? firstCaption.file,
+      );
       player.setSubtitleTrack(
         SubtitleTrack.uri(
           subUrl,
@@ -287,6 +394,32 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     } else {
       player.setSubtitleTrack(SubtitleTrack.no());
       _currentSubtitleTrack = null;
+    }
+  }
+
+  Future<void> _switchSource(VideoSource source) async {
+    if (_isLoading) return;
+    setState(() {
+      _isLoading = true;
+      _savedPosition = player.state.position;
+    });
+    try {
+      await _playSource(source);
+    } catch (_) {
+      try {
+        await _playFirstAvailable(
+          _playableSources(_watchData!),
+          exclude: source,
+        );
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Unable to switch server: $error')),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -336,15 +469,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                                 : null,
                             onTap: () {
                               Navigator.pop(context);
-                              setState(() {
-                                _isLoading = true;
-                                _savedPosition = player.state.position;
-                              });
-                              _playSource(source).then((_) {
-                                setState(() {
-                                  _isLoading = false;
-                                });
-                              });
+                              _switchSource(source);
                             },
                           );
                         }).toList(),
@@ -406,7 +531,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                           ),
                           if (_currentSource != null)
                             ..._currentSource!.tracks
-                                .where((t) => t.kind == 'captions')
+                                .where((track) {
+                                  final kind = track.kind.toLowerCase();
+                                  return kind == 'captions' ||
+                                      kind == 'subtitles';
+                                })
                                 .map((track) {
                                   return ListTile(
                                     title: Text(
@@ -425,16 +554,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                                         : null,
                                     onTap: () {
                                       Navigator.pop(context);
-                                      String subUrl =
-                                          track.proxyUrl ?? track.file;
-                                      if (subUrl.startsWith('/api')) {
-                                        subUrl =
-                                            "${ApiConstants.baseUrl}$subUrl";
-                                      }
-                                      if (subUrl.startsWith('/')) {
-                                        subUrl =
-                                            '${ApiConstants.baseUrl}$subUrl';
-                                      }
+                                      final subUrl = _absoluteApiUrl(
+                                        track.proxyUrl ?? track.file,
+                                      );
                                       player.setSubtitleTrack(
                                         SubtitleTrack.uri(
                                           subUrl,
@@ -466,6 +588,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     _saveProgress();
     _progressSaveTimer?.cancel();
     _seekAnimationTimer?.cancel();
+    _playerErrorSubscription?.cancel();
     player.dispose();
     WakelockPlus.disable();
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -495,9 +618,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
               const SizedBox(height: 16),
               Text(_error!, style: const TextStyle(color: Colors.white)),
               const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Go Back'),
+              Wrap(
+                spacing: 12,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _retryPlayer,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Go Back'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -611,6 +744,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
           seekBarThumbColor: AppColors.accentStart,
           seekBarBufferColor: Colors.white24,
           seekBarColor: Colors.white38,
+          shiftSubtitlesOnControlsVisibilityChange: true,
         ),
         fullscreen: const MaterialVideoControlsThemeData(),
         child: GestureDetector(
@@ -656,7 +790,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                     backgroundColor: Color(0x66000000),
                   ),
                   textAlign: TextAlign.center,
-                  padding: EdgeInsets.only(left: 24, right: 24, bottom: 24),
+                  padding: EdgeInsets.only(left: 24, right: 24, bottom: 30),
                 ),
               ),
               if (_isFastForwarding)

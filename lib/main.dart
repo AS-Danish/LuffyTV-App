@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,12 +10,21 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:luffytv/core/services/local_db_service.dart';
+import 'package:luffytv/core/widgets/cached_artwork_image.dart';
+import 'package:luffytv/core/widgets/app_version_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
 
   await LocalDbService.init();
+
+  PaintingBinding.instance.imageCache.maximumSize = 800;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 96 * 1024 * 1024;
+  final savedAnime = [
+    ...LocalDbService.getMyList(),
+    ...LocalDbService.getAllProgress().map((progress) => progress.anime),
+  ];
 
   try {
     await dotenv.load(fileName: ".env");
@@ -29,6 +40,7 @@ Future<void> main() async {
   }
 
   runApp(const ProviderScope(child: MyApp()));
+  unawaited(ArtworkCache.prefetch(savedAnime.map((anime) => anime.posterUrl)));
 }
 
 class MyApp extends StatelessWidget {
@@ -44,7 +56,7 @@ class MyApp extends StatelessWidget {
       scrollBehavior: const MaterialScrollBehavior().copyWith(
         physics: const BouncingScrollPhysics(),
       ),
-      home: const MainNavScreen(),
+      home: const AppVersionGate(child: MainNavScreen()),
     );
   }
 }

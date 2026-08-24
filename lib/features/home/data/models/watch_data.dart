@@ -2,15 +2,20 @@ class WatchData {
   final List<VideoServer> servers;
   final List<VideoSource> sources;
 
-  const WatchData({
-    required this.servers,
-    required this.sources,
-  });
+  const WatchData({required this.servers, required this.sources});
 
   factory WatchData.fromJson(Map<String, dynamic> json) {
     return WatchData(
-      servers: (json['servers'] as List<dynamic>?)?.map((e) => VideoServer.fromJson(e)).toList() ?? [],
-      sources: (json['sources'] as List<dynamic>?)?.map((e) => VideoSource.fromJson(e)).toList() ?? [],
+      servers:
+          (json['servers'] as List<dynamic>?)
+              ?.map((e) => VideoServer.fromJson(e))
+              .toList() ??
+          [],
+      sources:
+          (json['sources'] as List<dynamic>?)
+              ?.map((e) => VideoSource.fromJson(e))
+              .toList() ??
+          [],
     );
   }
 }
@@ -20,11 +25,7 @@ class VideoServer {
   final String name;
   final String type;
 
-  const VideoServer({
-    required this.id,
-    required this.name,
-    required this.type,
-  });
+  const VideoServer({required this.id, required this.name, required this.type});
 
   factory VideoServer.fromJson(Map<String, dynamic> json) {
     return VideoServer(
@@ -54,6 +55,23 @@ class VideoSource {
     required this.tracks,
   });
 
+  String? get playableUrl {
+    for (final candidate in [proxyUrl, m3u8, url]) {
+      final value = candidate?.trim() ?? '';
+      if (value.isEmpty) continue;
+      if (value.startsWith('/')) return value;
+      final uri = Uri.tryParse(value);
+      if (uri != null &&
+          uri.hasScheme &&
+          (uri.scheme == 'http' || uri.scheme == 'https')) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  bool get isPlayable => playableUrl != null;
+
   factory VideoSource.fromJson(Map<String, dynamic> json) {
     return VideoSource(
       server: json['server'] as String? ?? '',
@@ -62,7 +80,11 @@ class VideoSource {
       m3u8: json['m3u8'] as String?,
       referer: json['referer'] as String?,
       proxyUrl: json['proxyUrl'] as String?,
-      tracks: (json['tracks'] as List<dynamic>?)?.map((e) => VideoTrack.fromJson(e)).toList() ?? [],
+      tracks:
+          (json['tracks'] as List<dynamic>?)
+              ?.map((e) => VideoTrack.fromJson(e))
+              .toList() ??
+          [],
     );
   }
 }

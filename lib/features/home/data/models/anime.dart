@@ -9,8 +9,9 @@ class Anime {
   final String genre;
   final int year;
   final String? posterUrl;
+  final String? posterPreviewUrl;
   final int gradientIndex; // fallback visual while posterUrl is null
-  
+
   // Netflix-style detailed fields
   final String description;
   final String maturityRating;
@@ -25,6 +26,7 @@ class Anime {
     required this.genre,
     required this.year,
     this.posterUrl,
+    this.posterPreviewUrl,
     this.gradientIndex = 0,
     this.description = '',
     this.maturityRating = 'TV-14',
@@ -54,13 +56,24 @@ class Anime {
       title: json['title'] as String? ?? 'Untitled',
       genre: json['genre'] as String? ?? '',
       year: parsedYear,
-      posterUrl: json['posterUrl'] as String? ?? json['image'] as String? ?? json['poster'] as String?,
-      description: json['synopsis'] as String? ?? json['description'] as String? ?? '',
-      maturityRating: json['rating'] as String? ?? json['maturityRating'] as String? ?? 'TV-14',
+      posterUrl:
+          json['posterUrl'] as String? ??
+          json['image'] as String? ??
+          json['poster'] as String?,
+      posterPreviewUrl: json['posterPreviewUrl'] as String?,
+      description:
+          json['synopsis'] as String? ?? json['description'] as String? ?? '',
+      maturityRating:
+          json['rating'] as String? ??
+          json['maturityRating'] as String? ??
+          'TV-14',
       matchPercentage: json['matchPercentage'] as int? ?? 90,
-      cast: (json['cast'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      cast:
+          (json['cast'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+          [],
       creator: json['creator'] as String? ?? 'Unknown',
-      seasons: (json['seasons'] as List<dynamic>?)
+      seasons:
+          (json['seasons'] as List<dynamic>?)
               ?.map((e) => Season.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
@@ -74,6 +87,7 @@ class Anime {
       'genre': genre,
       'year': year,
       'posterUrl': posterUrl,
+      'posterPreviewUrl': posterPreviewUrl,
       'gradientIndex': gradientIndex,
       'description': description,
       'maturityRating': maturityRating,
@@ -82,5 +96,23 @@ class Anime {
       'creator': creator,
       'seasons': seasons.map((e) => e.toJson()).toList(),
     };
+  }
+
+  Anime copyWith({String? posterUrl, String? posterPreviewUrl}) {
+    return Anime(
+      id: id,
+      title: title,
+      genre: genre,
+      year: year,
+      posterUrl: posterUrl ?? this.posterUrl,
+      posterPreviewUrl: posterPreviewUrl ?? this.posterPreviewUrl,
+      gradientIndex: gradientIndex,
+      description: description,
+      maturityRating: maturityRating,
+      matchPercentage: matchPercentage,
+      cast: cast,
+      creator: creator,
+      seasons: seasons,
+    );
   }
 }

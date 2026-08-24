@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:luffytv/core/services/local_db_service.dart';
 import 'package:luffytv/core/utils/api_constants.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
 import 'package:luffytv/features/home/data/models/episode.dart';
@@ -21,14 +22,27 @@ class _MemoryCacheEntry {
   });
 }
 
+class _ArtworkCacheEntry {
+  final String? url;
+  final DateTime expiresAt;
+
+  const _ArtworkCacheEntry({required this.url, required this.expiresAt});
+}
+
 class ApiAnimeRepository implements AnimeRepository {
   final http.Client client;
   final Map<String, _MemoryCacheEntry> _memoryCache = {};
   final Map<String, Future<dynamic>> _inFlight = {};
+  final Map<String, _ArtworkCacheEntry> _artworkCache = {};
+  Future<void>? _artworkHydration;
   DateTime? _blockedUntil;
 
   static const _maximumCacheEntries = 160;
   static const _requestTimeout = Duration(seconds: 12);
+  static const _artworkRequestTimeout = Duration(seconds: 4);
+  static const _artworkCacheDuration = Duration(hours: 12);
+  static const _negativeArtworkCacheDuration = Duration(minutes: 15);
+  static final _anilistUri = Uri.parse('https://graphql.anilist.co');
 
   ApiAnimeRepository({required this.client});
 
@@ -37,6 +51,7 @@ class ApiAnimeRepository implements AnimeRepository {
     required Duration freshFor,
     required Duration staleFor,
     required Future<T> Function() load,
+    bool Function(T value)? shouldCache,
   }) async {
     final now = DateTime.now();
     final cached = _memoryCache[key];
@@ -56,15 +71,17 @@ class ApiAnimeRepository implements AnimeRepository {
     late final Future<T> request;
     request = load()
         .then((value) {
-          final loadedAt = DateTime.now();
-          _memoryCache.remove(key);
-          _memoryCache[key] = _MemoryCacheEntry(
-            value: value as Object,
-            freshUntil: loadedAt.add(freshFor),
-            staleUntil: loadedAt.add(staleFor),
-          );
-          while (_memoryCache.length > _maximumCacheEntries) {
-            _memoryCache.remove(_memoryCache.keys.first);
+          if (shouldCache?.call(value) ?? true) {
+            final loadedAt = DateTime.now();
+            _memoryCache.remove(key);
+            _memoryCache[key] = _MemoryCacheEntry(
+              value: value as Object,
+              freshUntil: loadedAt.add(freshFor),
+              staleUntil: loadedAt.add(staleFor),
+            );
+            while (_memoryCache.length > _maximumCacheEntries) {
+              _memoryCache.remove(_memoryCache.keys.first);
+            }
           }
           return value;
         })
@@ -117,6 +134,163 @@ class ApiAnimeRepository implements AnimeRepository {
     return decoded;
   }
 
+  String _artworkKey(String title) =>
+      title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+
+  bool _needsArtworkUpgrade(Anime anime) {
+    final url = anime.posterUrl?.toLowerCase() ?? '';
+    return url.contains('/thumbnail/') || url.contains('picsum.photos');
+  }
+
+  Future<void> _fetchArtworkChunk(List<Anime> anime) async {
+    final fields = anime.indexed
+        .map((entry) {
+          final (index, item) = entry;
+          return '''
+        a$index: Media(search: ${jsonEncode(item.title)}, type: ANIME) {
+          coverImage { extraLarge large }
+        }
+      ''';
+        })
+        .join('\n');
+
+    final response = await client
+        .post(
+          _anilistUri,
+          headers: const {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({'query': 'query LuffyArtwork { $fields }'}),
+        )
+        .timeout(_artworkRequestTimeout);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Artwork request failed (${response.statusCode}).');
+    }
+
+    final payload = jsonDecode(response.body);
+    final data = payload is Map<String, dynamic>
+        ? payload['data'] as Map<String, dynamic>?
+        : null;
+    final now = DateTime.now();
+    final persistenceWrites = <Future<void>>[];
+    for (final entry in anime.indexed) {
+      final (index, item) = entry;
+      final media = data?['a$index'];
+      final cover = media is Map<String, dynamic>
+          ? media['coverImage'] as Map<String, dynamic>?
+          : null;
+      final extraLarge = cover?['extraLarge']?.toString().trim();
+      final large = cover?['large']?.toString().trim();
+      final resolved = extraLarge?.isNotEmpty == true
+          ? extraLarge
+          : (large?.isNotEmpty == true ? large : null);
+      _artworkCache[_artworkKey(item.title)] = _ArtworkCacheEntry(
+        url: resolved,
+        expiresAt: now.add(
+          resolved == null
+              ? _negativeArtworkCacheDuration
+              : _artworkCacheDuration,
+        ),
+      );
+      if (resolved != null) {
+        persistenceWrites.add(
+          LocalDbService.cacheArtworkUrl(item.title, resolved),
+        );
+      }
+    }
+    await Future.wait(persistenceWrites);
+  }
+
+  Future<void> _hydrateArtwork(List<Anime> anime) async {
+    const chunkSize = 8;
+    final chunks = <List<Anime>>[];
+    for (var index = 0; index < anime.length; index += chunkSize) {
+      chunks.add(
+        anime.sublist(index, (index + chunkSize).clamp(0, anime.length)),
+      );
+    }
+
+    var cursor = 0;
+    Future<void> worker() async {
+      while (cursor < chunks.length) {
+        final chunk = chunks[cursor++];
+        try {
+          await _fetchArtworkChunk(chunk);
+        } catch (_) {
+          final expiresAt = DateTime.now().add(_negativeArtworkCacheDuration);
+          for (final item in chunk) {
+            _artworkCache[_artworkKey(item.title)] = _ArtworkCacheEntry(
+              url: null,
+              expiresAt: expiresAt,
+            );
+          }
+        }
+      }
+    }
+
+    await Future.wait(
+      List.generate(chunks.length.clamp(0, 2), (_) => worker()),
+    );
+  }
+
+  @override
+  Future<List<Anime>> upgradeArtwork(List<Anime> anime) async {
+    if (anime.isEmpty) return anime;
+    final candidates = <String, Anime>{
+      for (final item in anime.where(_needsArtworkUpgrade))
+        _artworkKey(item.title): item,
+    };
+    if (candidates.isEmpty) return anime;
+
+    final persistedUntil = DateTime.now().add(_artworkCacheDuration);
+    for (final entry in candidates.entries) {
+      final persisted = LocalDbService.getCachedArtworkUrl(entry.value.title);
+      if (persisted != null) {
+        _artworkCache[entry.key] = _ArtworkCacheEntry(
+          url: persisted,
+          expiresAt: persistedUntil,
+        );
+      }
+    }
+
+    while (true) {
+      final now = DateTime.now();
+      final missing = candidates.entries
+          .where((entry) {
+            final cached = _artworkCache[entry.key];
+            return cached == null || !cached.expiresAt.isAfter(now);
+          })
+          .map((entry) => entry.value)
+          .toList();
+      if (missing.isEmpty) break;
+      final activeHydration = _artworkHydration;
+      if (activeHydration != null) {
+        await activeHydration;
+        continue;
+      }
+      final hydration = _hydrateArtwork(missing);
+      _artworkHydration = hydration;
+      try {
+        await hydration;
+      } finally {
+        if (identical(_artworkHydration, hydration)) {
+          _artworkHydration = null;
+        }
+      }
+    }
+
+    return anime.map((item) {
+      if (!_needsArtworkUpgrade(item)) return item;
+      final upgraded = _artworkCache[_artworkKey(item.title)]?.url;
+      if (upgraded == null || upgraded.isEmpty) return item;
+      return item.copyWith(
+        posterUrl: upgraded,
+        posterPreviewUrl: item.posterUrl,
+      );
+    }).toList();
+  }
+
   Future<Map<String, dynamic>> _fetchHomeData() => _cached(
     key: 'home',
     freshFor: const Duration(minutes: 5),
@@ -139,7 +313,8 @@ class ApiAnimeRepository implements AnimeRepository {
     final data = await _fetchHomeData();
     final spotlight = data['spotlight'] as List<dynamic>? ?? [];
     if (spotlight.isNotEmpty) {
-      return Anime.fromJson(spotlight.first as Map<String, dynamic>);
+      final featured = Anime.fromJson(spotlight.first as Map<String, dynamic>);
+      return (await upgradeArtwork([featured])).first;
     }
     throw Exception('No featured anime found');
   }
@@ -148,45 +323,49 @@ class ApiAnimeRepository implements AnimeRepository {
   Future<List<Anime>> fetchEditorsPicks() async {
     final data = await _fetchHomeData();
     final newRelease = data['newRelease'] as List<dynamic>? ?? [];
-    return newRelease
-        .map((e) => Anime.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return upgradeArtwork(
+      newRelease.map((e) => Anime.fromJson(e as Map<String, dynamic>)).toList(),
+    );
   }
 
   @override
   Future<List<Anime>> fetchTrendingNow() async {
     final data = await _fetchHomeData();
     final topDay = data['topDay'] as List<dynamic>? ?? [];
-    return topDay
-        .map((e) => Anime.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return upgradeArtwork(
+      topDay.map((e) => Anime.fromJson(e as Map<String, dynamic>)).toList(),
+    );
   }
 
   @override
   Future<List<Anime>> fetchNewEpisodes() async {
     final data = await _fetchHomeData();
     final latestEpisodes = data['latestEpisodes'] as List<dynamic>? ?? [];
-    return latestEpisodes
-        .map((e) => Anime.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return upgradeArtwork(
+      latestEpisodes
+          .map((e) => Anime.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
   }
 
   @override
   Future<List<Anime>> fetchRecentlyCompleted() async {
     final data = await _fetchHomeData();
     final justCompleted = data['justCompleted'] as List<dynamic>? ?? [];
-    return justCompleted
-        .map((e) => Anime.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return upgradeArtwork(
+      justCompleted
+          .map((e) => Anime.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
   }
 
   @override
   Future<List<Anime>> fetchTopMonth() async {
     final data = await _fetchHomeData();
     final topMonth = data['topMonth'] as List<dynamic>? ?? [];
-    return topMonth
-        .map((e) => Anime.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return upgradeArtwork(
+      topMonth.map((e) => Anime.fromJson(e as Map<String, dynamic>)).toList(),
+    );
   }
 
   @override
@@ -250,10 +429,12 @@ class ApiAnimeRepository implements AnimeRepository {
         if (response['ok'] == true && data is Map<String, dynamic>) {
           final results = data['results'];
           if (results is List) {
-            return results
-                .whereType<Map<String, dynamic>>()
-                .map(Anime.fromJson)
-                .toList();
+            return upgradeArtwork(
+              results
+                  .whereType<Map<String, dynamic>>()
+                  .map(Anime.fromJson)
+                  .toList(),
+            );
           }
         }
         return [];
@@ -262,20 +443,30 @@ class ApiAnimeRepository implements AnimeRepository {
   }
 
   @override
-  Future<WatchData> fetchWatchData(String slug, int episodeNumber) => _cached(
-    key: 'watch:${slug.toLowerCase()}:$episodeNumber',
-    freshFor: const Duration(seconds: 45),
-    staleFor: const Duration(minutes: 3),
-    load: () async {
-      final encodedSlug = Uri.encodeComponent(slug);
-      final uri = Uri.parse(
-        '${ApiConstants.baseUrl}/api/watch/$encodedSlug',
-      ).replace(queryParameters: {'ep': '$episodeNumber', 'stream': 'false'});
-      final response = await _getJson(uri);
-      if (response['ok'] == true && response['data'] is Map<String, dynamic>) {
-        return WatchData.fromJson(response['data'] as Map<String, dynamic>);
-      }
-      throw Exception('API returned ok: false');
-    },
-  );
+  Future<WatchData> fetchWatchData(
+    String slug,
+    int episodeNumber, {
+    bool forceRefresh = false,
+  }) {
+    final key = 'watch:${slug.toLowerCase()}:$episodeNumber';
+    if (forceRefresh) _memoryCache.remove(key);
+    return _cached(
+      key: key,
+      freshFor: const Duration(seconds: 45),
+      staleFor: const Duration(minutes: 3),
+      load: () async {
+        final encodedSlug = Uri.encodeComponent(slug);
+        final uri = Uri.parse(
+          '${ApiConstants.baseUrl}/api/watch/$encodedSlug',
+        ).replace(queryParameters: {'ep': '$episodeNumber', 'stream': 'false'});
+        final response = await _getJson(uri);
+        if (response['ok'] == true &&
+            response['data'] is Map<String, dynamic>) {
+          return WatchData.fromJson(response['data'] as Map<String, dynamic>);
+        }
+        throw Exception('API returned ok: false');
+      },
+      shouldCache: (data) => data.sources.any((source) => source.isPlayable),
+    );
+  }
 }

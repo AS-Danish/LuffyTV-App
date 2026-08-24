@@ -7,10 +7,23 @@ import 'package:luffytv/core/services/hls_downloader_service.dart';
 import 'package:luffytv/features/home/data/models/episode.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
 
-final downloadItemsProvider = NotifierProvider<DownloadNotifier, List<DownloadItem>>(DownloadNotifier.new);
+final downloadItemsProvider =
+    NotifierProvider<DownloadNotifier, List<DownloadItem>>(
+      DownloadNotifier.new,
+    );
 
 class DownloadNotifier extends Notifier<List<DownloadItem>> {
   static const _prefsKey = 'luffytv_downloads';
+
+  static Future<List<DownloadItem>> loadStoredDownloads() async {
+    final prefs = await SharedPreferences.getInstance();
+    final data = prefs.getStringList(_prefsKey) ?? const <String>[];
+    return data.map((value) {
+      return DownloadItem.fromJson(
+        Map<String, dynamic>.from(jsonDecode(value) as Map),
+      );
+    }).toList();
+  }
 
   @override
   List<DownloadItem> build() {
@@ -20,10 +33,8 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
   }
 
   Future<void> _loadFromPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final data = prefs.getStringList(_prefsKey);
-    if (data != null) {
-      final items = data.map((jsonStr) => DownloadItem.fromJson(jsonDecode(jsonStr))).toList();
+    final items = await loadStoredDownloads();
+    if (items.isNotEmpty) {
       // Ensure anything that was 'downloading' when app closed is reset to 'failed' or 'pending'
       final resetItems = items.map((item) {
         if (item.state == DownloadState.downloading) {
@@ -41,11 +52,19 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     await prefs.setStringList(_prefsKey, data);
   }
 
-  void startDownload(Anime anime, Episode episode, String m3u8Url, {String? referer}) {
-    final id = '${anime.id}_${episode.episodeNumber}'; // using anime.id as slug equivalent
-    
+  void startDownload(
+    Anime anime,
+    Episode episode,
+    String m3u8Url, {
+    String? referer,
+  }) {
+    final id =
+        '${anime.id}_${episode.episodeNumber}'; // using anime.id as slug equivalent
+
     // Check if already downloading or downloaded
-    if (state.any((item) => item.id == id && item.state != DownloadState.failed)) {
+    if (state.any(
+      (item) => item.id == id && item.state != DownloadState.failed,
+    )) {
       return;
     }
 
@@ -66,23 +85,34 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     _executeDownload(id, m3u8Url, referer: referer);
   }
 
-  Future<void> _executeDownload(String id, String m3u8Url, {String? referer}) async {
+  Future<void> _executeDownload(
+    String id,
+    String m3u8Url, {
+    String? referer,
+  }) async {
     final downloader = ref.read(hlsDownloaderProvider);
     await downloader.requestPermissions();
-    
+
     try {
-      await for (final progress in downloader.downloadEpisode(id, m3u8Url, referer: referer)) {
+      await for (final progress in downloader.downloadEpisode(
+        id,
+        m3u8Url,
+        referer: referer,
+      )) {
         _updateItem(id, (item) => item.copyWith(progress: progress));
       }
-      
+
       final tempDir = await getTemporaryDirectory();
       final localPath = '${tempDir.path}/$id.mp4';
-      
-      _updateItem(id, (item) => item.copyWith(
-        state: DownloadState.completed, 
-        progress: 1.0,
-        localM3u8Path: localPath
-      ));
+
+      _updateItem(
+        id,
+        (item) => item.copyWith(
+          state: DownloadState.completed,
+          progress: 1.0,
+          localM3u8Path: localPath,
+        ),
+      );
     } catch (e) {
       _updateItem(id, (item) => item.copyWith(state: DownloadState.failed));
     }
