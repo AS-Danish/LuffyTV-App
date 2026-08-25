@@ -4,6 +4,7 @@ import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/core/widgets/cached_artwork_image.dart';
 import 'package:luffytv/features/details/presentation/anime_details_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:luffytv/update/manual_update_screen.dart';
 
 class WatchHistoryScreen extends StatefulWidget {
   const WatchHistoryScreen({super.key});
@@ -337,6 +338,11 @@ class AppSettingsScreen extends StatelessWidget {
     child: ListView(
       padding: const EdgeInsets.all(18),
       children: [
+        _LinkTile(
+          'Check for updates',
+          Icons.system_update_alt_rounded,
+          const ManualUpdateScreen(),
+        ),
         _LinkTile(
           'About Luffy TV',
           Icons.info_outline_rounded,
