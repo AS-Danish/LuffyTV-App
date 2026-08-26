@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:luffytv/core/services/local_db_service.dart';
 import 'package:luffytv/core/utils/api_constants.dart';
+import 'package:luffytv/core/utils/playback_diagnostics.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
 import 'package:luffytv/features/home/data/models/episode.dart';
 import 'package:luffytv/features/home/data/repository/anime_repository.dart';
@@ -109,21 +110,39 @@ class ApiAnimeRepository implements AnimeRepository {
     return Duration(seconds: delay.clamp(1, 120));
   }
 
-  Future<Map<String, dynamic>> _getJson(Uri uri) async {
+  Future<Map<String, dynamic>> _getJson(Uri uri, {String? diagnosticId}) async {
     if (_blockedUntil?.isAfter(DateTime.now()) == true) {
       throw Exception('Anime service is cooling down after rate limiting.');
     }
+    final startedAt = DateTime.now();
+    if (diagnosticId != null) {
+      PlaybackDiagnostics.log(diagnosticId, 'api.request_started', {
+        'host': uri.host,
+        'path': uri.path,
+      });
+    }
     final response = await client
-        .get(uri, headers: const {'Accept': 'application/json'})
+        .get(
+          uri,
+          headers: {
+            'Accept': 'application/json',
+            'X-Playback-Request-Id': ?diagnosticId,
+          },
+        )
         .timeout(_requestTimeout);
+    if (diagnosticId != null) {
+      PlaybackDiagnostics.log(diagnosticId, 'api.response_received', {
+        'status': response.statusCode,
+        'bytes': response.bodyBytes.length,
+        'serverRequestId': response.headers['x-playback-request-id'] ?? '',
+        'elapsedMs': DateTime.now().difference(startedAt).inMilliseconds,
+      });
+    }
     if (response.statusCode == 429) {
       _blockedUntil = DateTime.now().add(_retryAfter(response));
       throw Exception('Anime service rate limit reached.');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      if (response.statusCode >= 500) {
-        _blockedUntil = DateTime.now().add(const Duration(seconds: 10));
-      }
       throw Exception('Anime service request failed (${response.statusCode}).');
     }
     final decoded = jsonDecode(response.body);
@@ -447,7 +466,11 @@ class ApiAnimeRepository implements AnimeRepository {
     String slug,
     int episodeNumber, {
     bool forceRefresh = false,
+    String? diagnosticId,
   }) {
+    final requestId = PlaybackDiagnostics.enabled
+        ? diagnosticId ?? PlaybackDiagnostics.newRequestId()
+        : null;
     final key = 'watch:${slug.toLowerCase()}:$episodeNumber';
     if (forceRefresh) _memoryCache.remove(key);
     return _cached(
@@ -459,10 +482,29 @@ class ApiAnimeRepository implements AnimeRepository {
         final uri = Uri.parse(
           '${ApiConstants.baseUrl}/api/watch/$encodedSlug',
         ).replace(queryParameters: {'ep': '$episodeNumber', 'stream': 'false'});
-        final response = await _getJson(uri);
+        final response = await _getJson(uri, diagnosticId: requestId);
         if (response['ok'] == true &&
             response['data'] is Map<String, dynamic>) {
-          return WatchData.fromJson(response['data'] as Map<String, dynamic>);
+          final data = WatchData.fromJson(
+            response['data'] as Map<String, dynamic>,
+          );
+          if (requestId != null) {
+            PlaybackDiagnostics.log(requestId, 'api.sources_parsed', {
+              'sourceCount': data.sources.length,
+              'serverCount': data.servers.length,
+              'sources': data.sources
+                  .map(
+                    (source) => {
+                      'server': source.server,
+                      'type': source.type,
+                      'host': PlaybackDiagnostics.host(source.playableUrl),
+                      'proxied': source.proxyUrl?.trim().isNotEmpty == true,
+                    },
+                  )
+                  .toList(),
+            });
+          }
+          return data;
         }
         throw Exception('API returned ok: false');
       },

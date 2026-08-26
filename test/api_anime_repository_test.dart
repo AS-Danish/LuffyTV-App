@@ -107,4 +107,47 @@ void main() {
     expect(results.every((result) => result.sources.length == 1), isTrue);
     client.close();
   });
+
+  test('server errors do not trigger the rate-limit cooldown', () async {
+    var requests = 0;
+    final client = MockClient((request) async {
+      requests += 1;
+      if (requests == 1) {
+        return http.Response(
+          jsonEncode({'ok': false, 'message': 'temporary provider failure'}),
+          500,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      return jsonResponse({
+        'servers': [
+          {'id': 'one', 'name': 'Server', 'type': 'sub'},
+        ],
+        'sources': [
+          {
+            'server': 'Server',
+            'type': 'sub',
+            'url': 'https://video.example/episode.m3u8',
+            'm3u8': 'https://video.example/episode.m3u8',
+            'tracks': <Object>[],
+          },
+        ],
+      });
+    });
+    final repository = ApiAnimeRepository(client: client);
+
+    await expectLater(
+      repository.fetchWatchData('one-piece', 1),
+      throwsA(isA<Exception>()),
+    );
+    final retry = await repository.fetchWatchData(
+      'one-piece',
+      1,
+      forceRefresh: true,
+    );
+
+    expect(requests, 2);
+    expect(retry.sources, hasLength(1));
+    client.close();
+  });
 }

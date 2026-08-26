@@ -691,179 +691,188 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                   SliverList(
                     delegate: SliverChildBuilderDelegate((context, index) {
                       final ep = chunkEpisodes[index];
-                      return Container(
-                        margin: const EdgeInsets.symmetric(
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 5,
                         ),
-                        decoration: BoxDecoration(
+                        child: Material(
                           color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 8,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            side: const BorderSide(color: AppColors.border),
                           ),
-                          leading: ClipRRect(
-                            borderRadius: BorderRadius.circular(AppRadius.sm),
-                            child: SizedBox(
-                              width: 120,
-                              height: 70,
-                              child: Stack(
-                                fit: StackFit.expand,
-                                alignment: Alignment.center,
-                                children: [
-                                  ColoredBox(color: AppColors.border),
-                                  if (widget.anime.posterUrl != null)
-                                    CachedArtworkImage(
-                                      imageUrl: widget.anime.posterUrl!,
-                                      previewUrl: widget.anime.posterPreviewUrl,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ColoredBox(
-                                    color: Colors.black.withValues(alpha: 0.4),
-                                  ),
-                                  const Icon(
-                                    Icons.play_circle_outline,
-                                    color: AppColors.textPrimary,
-                                    size: 32,
-                                  ),
-                                ],
-                              ),
+                          clipBehavior: Clip.antiAlias,
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 8,
                             ),
-                          ),
-                          title: Text(
-                            ep.title,
-                            style: AppTextStyles.cardTitle.copyWith(
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Episode ${ep.episodeNumber}',
-                                style: AppTextStyles.caption,
-                              ),
-                              ValueListenableBuilder(
-                                valueListenable: Hive.box(
-                                  'watch_progress',
-                                ).listenable(keys: [widget.anime.id]),
-                                builder: (context, _, _) {
-                                  final prog = LocalDbService.getProgress(
-                                    widget.anime.id,
-                                  );
-                                  double percentage = 0.0;
-                                  if (prog != null) {
-                                    final epProgress = prog
-                                        .episodes[ep.episodeNumber.toString()];
-                                    if (epProgress != null &&
-                                        epProgress.durationSeconds > 0) {
-                                      percentage =
-                                          (epProgress.positionSeconds /
-                                                  epProgress.durationSeconds)
-                                              .clamp(0.0, 1.0);
-                                    }
-                                  }
-                                  if (percentage > 0) {
-                                    return Padding(
-                                      padding: const EdgeInsets.only(
-                                        top: 8.0,
-                                        right: 16.0,
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(AppRadius.sm),
+                              child: SizedBox(
+                                width: 120,
+                                height: 70,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  alignment: Alignment.center,
+                                  children: [
+                                    ColoredBox(color: AppColors.border),
+                                    if (widget.anime.posterUrl != null)
+                                      CachedArtworkImage(
+                                        imageUrl: widget.anime.posterUrl!,
+                                        previewUrl:
+                                            widget.anime.posterPreviewUrl,
+                                        fit: BoxFit.cover,
                                       ),
-                                      child: LinearProgressIndicator(
-                                        value: percentage,
-                                        backgroundColor: AppColors.border,
-                                        color: AppColors.accentStart,
-                                        minHeight: 4,
+                                    ColoredBox(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.4,
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.play_circle_outline,
+                                      color: AppColors.textPrimary,
+                                      size: 32,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              ep.title,
+                              style: AppTextStyles.cardTitle.copyWith(
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Episode ${ep.episodeNumber}',
+                                  style: AppTextStyles.caption,
+                                ),
+                                ValueListenableBuilder(
+                                  valueListenable: Hive.box(
+                                    'watch_progress',
+                                  ).listenable(keys: [widget.anime.id]),
+                                  builder: (context, _, _) {
+                                    final prog = LocalDbService.getProgress(
+                                      widget.anime.id,
+                                    );
+                                    double percentage = 0.0;
+                                    if (prog != null) {
+                                      final epProgress =
+                                          prog.episodes[ep.episodeNumber
+                                              .toString()];
+                                      if (epProgress != null &&
+                                          epProgress.durationSeconds > 0) {
+                                        percentage =
+                                            (epProgress.positionSeconds /
+                                                    epProgress.durationSeconds)
+                                                .clamp(0.0, 1.0);
+                                      }
+                                    }
+                                    if (percentage > 0) {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 8.0,
+                                          right: 16.0,
+                                        ),
+                                        child: LinearProgressIndicator(
+                                          value: percentage,
+                                          backgroundColor: AppColors.border,
+                                          color: AppColors.accentStart,
+                                          minHeight: 4,
+                                        ),
+                                      );
+                                    }
+                                    return const SizedBox.shrink();
+                                  },
+                                ),
+                              ],
+                            ),
+                            trailing: Consumer(
+                              builder: (context, ref, child) {
+                                final downloads = ref.watch(
+                                  downloadItemsProvider,
+                                );
+                                final downloadId =
+                                    '${widget.anime.id}_${ep.episodeNumber}';
+                                final currentDownload = downloads
+                                    .where((d) => d.id == downloadId)
+                                    .firstOrNull;
+
+                                if (currentDownload != null) {
+                                  if (currentDownload.state ==
+                                      DownloadState.downloading) {
+                                    return GestureDetector(
+                                      onTap: () {
+                                        ref
+                                            .read(
+                                              downloadItemsProvider.notifier,
+                                            )
+                                            .cancelDownload(downloadId);
+                                      },
+                                      child: SizedBox(
+                                        width: 28,
+                                        height: 28,
+                                        child: Stack(
+                                          alignment: Alignment.center,
+                                          children: [
+                                            CircularProgressIndicator(
+                                              value: currentDownload.progress,
+                                              strokeWidth: 2.5,
+                                              backgroundColor: AppColors.border,
+                                              color: AppColors.accentStart,
+                                            ),
+                                            const Icon(
+                                              Icons.stop,
+                                              size: 16,
+                                              color: AppColors.textPrimary,
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     );
+                                  } else if (currentDownload.state ==
+                                      DownloadState.completed) {
+                                    return const Icon(
+                                      Icons.check_circle,
+                                      color: AppColors.accentStart,
+                                    );
                                   }
-                                  return const SizedBox.shrink();
-                                },
-                              ),
-                            ],
-                          ),
-                          trailing: Consumer(
-                            builder: (context, ref, child) {
-                              final downloads = ref.watch(
-                                downloadItemsProvider,
-                              );
-                              final downloadId =
-                                  '${widget.anime.id}_${ep.episodeNumber}';
-                              final currentDownload = downloads
-                                  .where((d) => d.id == downloadId)
-                                  .firstOrNull;
-
-                              if (currentDownload != null) {
-                                if (currentDownload.state ==
-                                    DownloadState.downloading) {
-                                  return GestureDetector(
-                                    onTap: () {
-                                      ref
-                                          .read(downloadItemsProvider.notifier)
-                                          .cancelDownload(downloadId);
-                                    },
-                                    child: SizedBox(
-                                      width: 28,
-                                      height: 28,
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          CircularProgressIndicator(
-                                            value: currentDownload.progress,
-                                            strokeWidth: 2.5,
-                                            backgroundColor: AppColors.border,
-                                            color: AppColors.accentStart,
-                                          ),
-                                          const Icon(
-                                            Icons.stop,
-                                            size: 16,
-                                            color: AppColors.textPrimary,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                } else if (currentDownload.state ==
-                                    DownloadState.completed) {
-                                  return const Icon(
-                                    Icons.check_circle,
-                                    color: AppColors.accentStart,
-                                  );
                                 }
-                              }
 
-                              return IconButton(
-                                icon: const Icon(
-                                  Icons.download,
-                                  color: AppColors.textSecondary,
+                                return IconButton(
+                                  icon: const Icon(
+                                    Icons.download,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  onPressed: () {
+                                    _showDownloadQualityDialog(
+                                      context,
+                                      widget.anime,
+                                      ep,
+                                      ref,
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => VideoPlayerScreen(
+                                    animeTitle: widget.anime.title,
+                                    animeSlug: widget.anime.id,
+                                    episodeNumber: ep.episodeNumber,
+                                    anime: widget.anime,
+                                  ),
                                 ),
-                                onPressed: () {
-                                  _showDownloadQualityDialog(
-                                    context,
-                                    widget.anime,
-                                    ep,
-                                    ref,
-                                  );
-                                },
                               );
                             },
                           ),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => VideoPlayerScreen(
-                                  animeTitle: widget.anime.title,
-                                  animeSlug: widget.anime.id,
-                                  episodeNumber: ep.episodeNumber,
-                                  anime: widget.anime,
-                                ),
-                              ),
-                            );
-                          },
                         ),
                       );
                     }, childCount: chunkEpisodes.length),

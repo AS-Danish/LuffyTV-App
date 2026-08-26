@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:luffytv/core/utils/api_constants.dart';
+import 'package:luffytv/core/utils/playback_diagnostics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
@@ -57,10 +57,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   bool _sourceFallbackInProgress = false;
   bool _playingLocalFile = false;
   bool _subtitlesEnabled = true;
+  late String _playbackRequestId;
 
   @override
   void initState() {
     super.initState();
+    _playbackRequestId = PlaybackDiagnostics.newRequestId('player');
+    PlaybackDiagnostics.log(_playbackRequestId, 'player.screen_opened', {
+      'slug': widget.animeSlug,
+      'episode': widget.episodeNumber,
+      'local': widget.isLocal,
+    });
     WakelockPlus.enable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
@@ -156,15 +163,36 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     Object? lastError;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
+        PlaybackDiagnostics.log(_playbackRequestId, 'player.resolve_attempt', {
+          'attempt': attempt + 1,
+          'forceRefresh': forceRefresh || attempt > 0,
+        });
         final watchData = await repo.fetchWatchData(
           widget.animeSlug,
           widget.episodeNumber,
           forceRefresh: forceRefresh || attempt > 0,
+          diagnosticId: _playbackRequestId,
         );
-        if (_playableSources(watchData).isNotEmpty) return watchData;
+        final playable = _playableSources(watchData);
+        if (playable.isNotEmpty) {
+          PlaybackDiagnostics.log(
+            _playbackRequestId,
+            'player.resolve_succeeded',
+            {
+              'attempt': attempt + 1,
+              'sourceCount': watchData.sources.length,
+              'playableCount': playable.length,
+            },
+          );
+          return watchData;
+        }
         lastError = Exception('The API returned an empty source list.');
       } catch (error) {
         lastError = error;
+        PlaybackDiagnostics.log(_playbackRequestId, 'player.resolve_failed', {
+          'attempt': attempt + 1,
+          'error': PlaybackDiagnostics.safeError(error),
+        });
       }
       if (attempt < 2) {
         await Future<void>.delayed(
@@ -172,7 +200,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         );
       }
     }
-    if (kDebugMode) debugPrint('Source resolution failed: $lastError');
+    PlaybackDiagnostics.log(_playbackRequestId, 'player.resolve_exhausted', {
+      'error': PlaybackDiagnostics.safeError(lastError),
+    });
     throw Exception(
       'No playable video source is available right now. Please retry.',
     );
@@ -186,19 +216,39 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     for (final source in sources) {
       if (identical(source, exclude)) continue;
       try {
+        PlaybackDiagnostics.log(_playbackRequestId, 'player.source_attempt', {
+          'server': source.server,
+          'type': source.type,
+          'host': PlaybackDiagnostics.host(source.playableUrl),
+          'proxied': source.proxyUrl?.trim().isNotEmpty == true,
+        });
         await _playSource(source);
+        PlaybackDiagnostics.log(_playbackRequestId, 'player.source_opened', {
+          'server': source.server,
+          'type': source.type,
+          'host': PlaybackDiagnostics.host(source.playableUrl),
+        });
         return source;
       } catch (error) {
         lastError = error;
-        if (kDebugMode) {
-          debugPrint('Source ${source.server} failed: $error');
-        }
+        PlaybackDiagnostics.log(_playbackRequestId, 'player.source_failed', {
+          'server': source.server,
+          'type': source.type,
+          'host': PlaybackDiagnostics.host(source.playableUrl),
+          'error': PlaybackDiagnostics.safeError(error),
+        });
       }
     }
     throw Exception(lastError ?? 'All resolved video sources failed.');
   }
 
   Future<void> _handlePlaybackError(String message) async {
+    PlaybackDiagnostics.log(_playbackRequestId, 'player.runtime_error', {
+      'server': _currentSource?.server ?? '',
+      'host': PlaybackDiagnostics.host(_currentSource?.playableUrl),
+      'positionSeconds': player.state.position.inSeconds,
+      'error': PlaybackDiagnostics.safeError(message),
+    });
     if (!mounted ||
         widget.isLocal ||
         _playingLocalFile ||
@@ -227,9 +277,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         );
       }
     } catch (error) {
-      if (kDebugMode) {
-        debugPrint('Automatic source fallback failed: $message / $error');
-      }
+      PlaybackDiagnostics.log(_playbackRequestId, 'player.fallback_failed', {
+        'originalError': PlaybackDiagnostics.safeError(message),
+        'fallbackError': PlaybackDiagnostics.safeError(error),
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -251,6 +302,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       _error = null;
     });
     await player.stop();
+    _playbackRequestId = PlaybackDiagnostics.newRequestId('retry');
+    PlaybackDiagnostics.log(_playbackRequestId, 'player.manual_retry', {
+      'slug': widget.animeSlug,
+      'episode': widget.episodeNumber,
+    });
     await _initPlayer(forceRefresh: true);
   }
 
@@ -341,6 +397,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {
+      PlaybackDiagnostics.log(
+        _playbackRequestId,
+        'player.initialization_failed',
+        {'error': PlaybackDiagnostics.safeError(e)},
+      );
       if (mounted) {
         setState(() {
           _error = e.toString().replaceFirst('Exception: ', '');
@@ -358,15 +419,22 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     }
     final url = _absoluteApiUrl(playableUrl);
 
-    final Map<String, String> headers = {};
+    final Map<String, String> headers = {
+      if (PlaybackDiagnostics.enabled)
+        'X-Playback-Request-Id': _playbackRequestId,
+    };
     if (source.referer != null) {
       headers['Referer'] = source.referer!;
     }
 
-    if (kDebugMode) {
-      debugPrint('Headers: $headers');
-      debugPrint('==========================\n');
-    }
+    PlaybackDiagnostics.log(_playbackRequestId, 'player.media_open', {
+      'server': source.server,
+      'type': source.type,
+      'host': PlaybackDiagnostics.host(url),
+      'proxied': source.proxyUrl?.trim().isNotEmpty == true,
+      'refererHost': PlaybackDiagnostics.host(source.referer),
+      'captionCount': source.tracks.length,
+    });
 
     await player.open(Media(url, httpHeaders: headers));
 

@@ -23,6 +23,7 @@ abstract class AnimeRepository {
     String slug,
     int episodeNumber, {
     bool forceRefresh = false,
+    String? diagnosticId,
   });
 }
 
@@ -306,6 +307,7 @@ class MockAnimeRepository implements AnimeRepository {
     String slug,
     int episodeNumber, {
     bool forceRefresh = false,
+    String? diagnosticId,
   }) async {
     await Future.delayed(const Duration(milliseconds: 600));
     return const WatchData(
