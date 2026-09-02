@@ -111,6 +111,7 @@ class UpdateController extends ValueNotifier<AppUpdateState> {
           manifest: null,
           failure: null,
           manifestFromCache: false,
+          networkUnavailable: result.networkUnavailable,
         );
         await downloader.cleanup();
         return;
@@ -120,6 +121,7 @@ class UpdateController extends ValueNotifier<AppUpdateState> {
         manifest: manifest,
         failure: null,
         manifestFromCache: result.fromCache,
+        networkUnavailable: result.networkUnavailable,
       );
       await downloader.cleanup(keepVersionCode: manifest.versionCode);
       _log('UPDATE_REQUIRED versionCode=${manifest.versionCode}');
@@ -134,12 +136,14 @@ class UpdateController extends ValueNotifier<AppUpdateState> {
       value = value.copyWith(
         status: UpdateStatus.failed,
         failure: UpdateFailure(failure, error.toString()),
+        networkUnavailable: error.network,
       );
       _log('UPDATE_CHECK_FAILED $error');
     } catch (error) {
       value = value.copyWith(
         status: UpdateStatus.failed,
         failure: UpdateFailure(UpdateFailureType.unknown, error.toString()),
+        networkUnavailable: false,
       );
     }
   }
@@ -162,6 +166,7 @@ class UpdateController extends ValueNotifier<AppUpdateState> {
     value = value.copyWith(
       status: UpdateStatus.preparingDownload,
       failure: null,
+      networkUnavailable: false,
       bytesDownloaded: 0,
       totalBytes: manifest.apkSize ?? 0,
       bytesPerSecond: 0,
@@ -236,10 +241,13 @@ class UpdateController extends ValueNotifier<AppUpdateState> {
       );
     } on UpdateDownloadException catch (error) {
       _fail(
-        error.noSpace
+        error.network
+            ? UpdateFailureType.noInternet
+            : error.noSpace
             ? UpdateFailureType.insufficientStorage
             : UpdateFailureType.downloadFailed,
         error.toString(),
+        networkUnavailable: error.network,
       );
     } on _UpdateFlowException catch (error) {
       if ({
@@ -389,11 +397,16 @@ class UpdateController extends ValueNotifier<AppUpdateState> {
     }
   }
 
-  void _fail(UpdateFailureType type, String technical) {
+  void _fail(
+    UpdateFailureType type,
+    String technical, {
+    bool networkUnavailable = false,
+  }) {
     _log('UPDATE_FAILED type=$type detail=$technical');
     value = value.copyWith(
       status: UpdateStatus.failed,
       failure: UpdateFailure(type, technical),
+      networkUnavailable: networkUnavailable,
     );
   }
 

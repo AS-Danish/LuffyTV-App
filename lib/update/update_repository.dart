@@ -12,7 +12,12 @@ import 'update_manifest.dart';
 class UpdateFetchResult {
   final UpdateManifest manifest;
   final bool fromCache;
-  const UpdateFetchResult(this.manifest, {required this.fromCache});
+  final bool networkUnavailable;
+  const UpdateFetchResult(
+    this.manifest, {
+    required this.fromCache,
+    this.networkUnavailable = false,
+  });
 }
 
 class UpdateRepositoryException implements Exception {
@@ -113,6 +118,7 @@ class UpdateRepository {
           return UpdateFetchResult(
             UpdateManifest.fromJson(Map<String, dynamic>.from(decoded)),
             fromCache: true,
+            networkUnavailable: network,
           );
         }
       }

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.3+3
+version: 1.0.6+6
 
 environment:
   sdk: ^3.12.0
@@ -39,6 +39,7 @@ dependencies:
   riverpod_annotation: ^4.0.6
   carousel_slider: ^5.1.2
   cached_network_image: ^3.4.1
+  connectivity_plus: ^7.3.1
   flutter_cache_manager: ^3.4.1
   http: ^1.6.0
   path_provider: ^2.1.6
@@ -84,6 +85,9 @@ dependency_overrides:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # Local runs and private APK releases use the sideload distribution unless
+  # an explicit --flavor is supplied (for example, --flavor play).
+  default-flavor: sideload
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

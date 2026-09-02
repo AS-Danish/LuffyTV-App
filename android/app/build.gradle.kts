@@ -16,6 +16,9 @@ if (keystorePropertiesFile.exists()) {
 val releaseSigningRequested = gradle.startParameter.taskNames.any {
     it.contains("release", ignoreCase = true)
 }
+val arm64OnlyRelease = releaseSigningRequested && gradle.startParameter.taskNames.any {
+    it.contains("sideload", ignoreCase = true)
+}
 if (releaseSigningRequested) {
     require(keystorePropertiesFile.exists()) {
         "Release signing is not configured. Run tool/generate_release_keystore.ps1 first."
@@ -36,6 +39,18 @@ android {
         buildConfig = true
     }
 
+    if (arm64OnlyRelease) {
+        packaging {
+            jniLibs {
+                excludes += setOf(
+                    "**/armeabi-v7a/**",
+                    "**/x86/**",
+                    "**/x86_64/**",
+                )
+            }
+        }
+    }
+
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
@@ -50,6 +65,12 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        if (arm64OnlyRelease) {
+            ndk {
+                abiFilters.clear()
+                abiFilters += "arm64-v8a"
+            }
+        }
     }
 
     flavorDimensions += "distribution"

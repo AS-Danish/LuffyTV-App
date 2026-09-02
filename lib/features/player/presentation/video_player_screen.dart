@@ -47,6 +47,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   WatchData? _watchData;
   VideoSource? _currentSource;
   VideoTrack? _currentSubtitleTrack;
+  DownloadItem? _localDownload;
+  DownloadedSubtitle? _currentLocalSubtitle;
+  SkipData? _skipData;
   Duration? _savedPosition;
   bool _isFastForwarding = false;
   double _brightness = 0.5;
@@ -151,6 +154,40 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         final kind = track.kind.toLowerCase();
         return kind == 'captions' || kind == 'subtitles';
       }).toList();
+
+  void _setDownloadedSubtitle(DownloadedSubtitle? subtitle) {
+    if (subtitle == null) {
+      player.setSubtitleTrack(SubtitleTrack.no());
+    } else {
+      player.setSubtitleTrack(
+        SubtitleTrack.uri(
+          Uri.file(subtitle.localPath).toString(),
+          title: subtitle.label,
+          language: subtitle.language.isEmpty
+              ? subtitle.label
+              : subtitle.language,
+        ),
+      );
+    }
+    if (mounted) {
+      setState(() {
+        _currentLocalSubtitle = subtitle;
+        _currentSubtitleTrack = null;
+      });
+    }
+  }
+
+  ({String label, SkipRange range})? _activeSkipAction(Duration position) {
+    final intro = _skipData?.intro;
+    if (intro?.contains(position) == true) {
+      return (label: 'Skip intro', range: intro!);
+    }
+    final outro = _skipData?.outro;
+    if (outro?.contains(position) == true) {
+      return (label: 'Skip outro', range: outro!);
+    }
+    return null;
+  }
 
   String _absoluteApiUrl(String url) {
     final value = url.trim();
@@ -315,11 +352,20 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       await _loadPlaybackPreferences();
       final downloadId = '${widget.animeSlug}_${widget.episodeNumber}';
       final downloads = ref.read(downloadItemsProvider);
-      final localItem = downloads
+      var localItem = downloads
           .where(
             (d) => d.id == downloadId && d.state == DownloadState.completed,
           )
           .firstOrNull;
+      if (widget.isLocal && localItem == null) {
+        localItem = (await DownloadNotifier.loadStoredDownloads())
+            .where(
+              (item) =>
+                  item.id == downloadId &&
+                  item.state == DownloadState.completed,
+            )
+            .firstOrNull;
+      }
 
       // If the file is downloaded (or forced local), play the local file
       if (widget.isLocal || localItem != null) {
@@ -327,6 +373,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         if (localItem == null || localItem.localM3u8Path == null) {
           throw Exception('Local file not found.');
         }
+        _localDownload = localItem;
+        _skipData = localItem.skipData;
 
         // Restore progress
         final savedProgress = LocalDbService.getProgress(widget.animeSlug);
@@ -344,18 +392,28 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         }
         player.play();
 
-        // Fetch watch data in background to enable subtitles and settings for local files
+        if (_subtitlesEnabled && localItem.subtitles.isNotEmpty) {
+          _setDownloadedSubtitle(localItem.subtitles.first);
+        } else {
+          _setDownloadedSubtitle(null);
+        }
+
+        // Refresh optional server/skip metadata when online. Offline subtitle
+        // switching always uses the files persisted with the download.
         try {
           final watchData = await _fetchPlayableWatchData(
             forceRefresh: forceRefresh,
           );
           _watchData = watchData;
+          _skipData ??= watchData.skipData;
           final playableSources = _playableSources(watchData);
           final bestSource = playableSources.firstOrNull;
           if (bestSource != null) {
             _currentSource = bestSource;
             final captions = _captionTracks(bestSource);
-            if (_subtitlesEnabled && captions.isNotEmpty) {
+            if (localItem.subtitles.isEmpty &&
+                _subtitlesEnabled &&
+                captions.isNotEmpty) {
               final firstCaption = captions.first;
               final subUrl = _absoluteApiUrl(
                 firstCaption.proxyUrl ?? firstCaption.file,
@@ -382,6 +440,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         forceRefresh: forceRefresh,
       );
       _watchData = watchData;
+      _skipData = watchData.skipData;
 
       // Check if we have saved progress to resume from
       final savedProgress = LocalDbService.getProgress(widget.animeSlug);
@@ -413,6 +472,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
   Future<void> _playSource(VideoSource source) async {
     _currentSource = source;
+    _currentLocalSubtitle = null;
     final playableUrl = source.playableUrl;
     if (playableUrl == null) {
       throw Exception('Source ${source.server} has no playable URL.');
@@ -492,7 +552,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   }
 
   void _showSettingsModal() {
-    if (_watchData == null) return;
+    if (_watchData == null && _localDownload == null) return;
 
     showModalBottomSheet(
       context: context,
@@ -513,7 +573,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                   labelColor: AppColors.accentStart,
                   unselectedLabelColor: Colors.white54,
                   tabs: [
-                    Tab(text: 'Server'),
+                    Tab(text: 'Audio'),
                     Tab(text: 'Quality'),
                     Tab(text: 'Subtitles'),
                   ],
@@ -521,26 +581,78 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                 Expanded(
                   child: TabBarView(
                     children: [
-                      // Audio & Server Tab
+                      // Online builds choose a language/server source. Local
+                      // files expose every audio stream retained by FFmpeg.
                       ListView(
-                        children: _watchData!.sources.map((source) {
-                          return ListTile(
-                            title: Text(
-                              '${source.server} (${source.type.toUpperCase()})',
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                            trailing: _currentSource == source
-                                ? const Icon(
-                                    Icons.check,
-                                    color: AppColors.accentStart,
-                                  )
-                                : null,
-                            onTap: () {
-                              Navigator.pop(context);
-                              _switchSource(source);
-                            },
-                          );
-                        }).toList(),
+                        children: _playingLocalFile
+                            ? [
+                                if (_localDownload != null)
+                                  ListTile(
+                                    leading: const Icon(
+                                      Icons.download_done_rounded,
+                                      color: AppColors.accentStart,
+                                    ),
+                                    title: Text(
+                                      _localDownload!.audioLabel,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    subtitle: const Text(
+                                      'Downloaded audio version',
+                                      style: TextStyle(color: Colors.white54),
+                                    ),
+                                  ),
+                                ...player.state.tracks.audio.map((track) {
+                                  final selected =
+                                      player.state.track.audio.id == track.id;
+                                  final label =
+                                      track.title?.trim().isNotEmpty == true
+                                      ? track.title!
+                                      : (track.language?.trim().isNotEmpty ==
+                                                true
+                                            ? track.language!
+                                            : 'Audio ${track.id}');
+                                  return ListTile(
+                                    title: Text(
+                                      label,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    trailing: selected
+                                        ? const Icon(
+                                            Icons.check,
+                                            color: AppColors.accentStart,
+                                          )
+                                        : null,
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      player.setAudioTrack(track);
+                                    },
+                                  );
+                                }),
+                              ]
+                            : (_watchData?.sources ?? const <VideoSource>[]).map((
+                                source,
+                              ) {
+                                return ListTile(
+                                  title: Text(
+                                    '${source.server} (${source.type.toUpperCase()})',
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                  trailing: _currentSource == source
+                                      ? const Icon(
+                                          Icons.check,
+                                          color: AppColors.accentStart,
+                                        )
+                                      : null,
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _switchSource(source);
+                                  },
+                                );
+                              }).toList(),
                       ),
                       // Quality Tab
                       ListView(
@@ -583,7 +695,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                               'None',
                               style: TextStyle(color: Colors.white),
                             ),
-                            trailing: _currentSubtitleTrack == null
+                            trailing:
+                                _currentSubtitleTrack == null &&
+                                    _currentLocalSubtitle == null
                                 ? const Icon(
                                     Icons.check,
                                     color: AppColors.accentStart,
@@ -594,10 +708,40 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                               player.setSubtitleTrack(SubtitleTrack.no());
                               setState(() {
                                 _currentSubtitleTrack = null;
+                                _currentLocalSubtitle = null;
                               });
                             },
                           ),
-                          if (_currentSource != null)
+                          if (_playingLocalFile && _localDownload != null)
+                            ..._localDownload!.subtitles.map((subtitle) {
+                              return ListTile(
+                                leading: const Icon(
+                                  Icons.offline_pin_rounded,
+                                  color: AppColors.accentStart,
+                                ),
+                                title: Text(
+                                  subtitle.label,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                                subtitle: const Text(
+                                  'Available offline',
+                                  style: TextStyle(color: Colors.white54),
+                                ),
+                                trailing:
+                                    _currentLocalSubtitle?.localPath ==
+                                        subtitle.localPath
+                                    ? const Icon(
+                                        Icons.check,
+                                        color: AppColors.accentStart,
+                                      )
+                                    : null,
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  _setDownloadedSubtitle(subtitle);
+                                },
+                              );
+                            })
+                          else if (_currentSource != null)
                             ..._currentSource!.tracks
                                 .where((track) {
                                   final kind = track.kind.toLowerCase();
@@ -860,6 +1004,37 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                   textAlign: TextAlign.center,
                   padding: EdgeInsets.only(left: 24, right: 24, bottom: 30),
                 ),
+              ),
+              StreamBuilder<Duration>(
+                stream: player.stream.position,
+                initialData: player.state.position,
+                builder: (context, snapshot) {
+                  final action = _activeSkipAction(
+                    snapshot.data ?? Duration.zero,
+                  );
+                  if (action == null) return const SizedBox.shrink();
+                  return Positioned(
+                    right: 24,
+                    bottom: 104,
+                    child: SafeArea(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.black.withValues(alpha: 0.78),
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70),
+                        ),
+                        onPressed: () => player.seek(
+                          Duration(
+                            milliseconds: (action.range.endSeconds * 1000)
+                                .round(),
+                          ),
+                        ),
+                        icon: const Icon(Icons.skip_next_rounded),
+                        label: Text(action.label),
+                      ),
+                    ),
+                  );
+                },
               ),
               if (_isFastForwarding)
                 const Positioned(

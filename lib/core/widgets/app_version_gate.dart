@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:luffytv/core/services/network_monitor.dart';
 import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
 import 'package:luffytv/features/downloads/providers/download_providers.dart';
@@ -19,6 +20,7 @@ class AppVersionGate extends StatefulWidget {
 class _AppVersionGateState extends State<AppVersionGate>
     with WidgetsBindingObserver {
   final controller = UpdateController.instance;
+  final _networkMonitor = NetworkMonitor();
   bool hasDownloads = false;
 
   @override
@@ -26,33 +28,65 @@ class _AppVersionGateState extends State<AppVersionGate>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     controller.addListener(_changed);
+    _networkMonitor.addListener(_networkChanged);
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => unawaited(_initialize()),
     );
   }
 
   Future<void> _initialize() async {
+    await Future.wait([
+      _loadDownloads(),
+      _networkMonitor.start(),
+      controller.initialize(),
+    ]);
+  }
+
+  Future<void> _loadDownloads() async {
     final downloads = await DownloadNotifier.loadStoredDownloads();
-    if (mounted) {
-      setState(() {
-        hasDownloads = downloads.any(
-          (item) =>
-              item.state == DownloadState.completed &&
-              item.localM3u8Path?.isNotEmpty == true,
-        );
-      });
-    }
-    await controller.initialize();
+    if (!mounted) return;
+    setState(() {
+      hasDownloads = downloads.any(
+        (item) =>
+            item.state == DownloadState.completed &&
+            item.localM3u8Path?.isNotEmpty == true,
+      );
+    });
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  void _networkChanged() {
+    if (!mounted) return;
+    if (_networkMonitor.isOnline && controller.value.networkUnavailable) {
+      unawaited(controller.checkForUpdate());
+    }
+    setState(() {});
+  }
+
+  bool _showOfflineDownloads(AppUpdateState state) {
+    final unavailable = _networkMonitor.isOffline || state.networkUnavailable;
+    if (!unavailable || state.verifiedApkPath != null) {
+      return false;
+    }
+    return !const {
+      UpdateStatus.launchingInstaller,
+      UpdateStatus.waitingForInstaller,
+      UpdateStatus.installed,
+    }.contains(state.status);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(controller.handleResume());
+      unawaited(_networkMonitor.refresh());
+      if (_networkMonitor.isOnline && controller.value.networkUnavailable) {
+        unawaited(controller.checkForUpdate());
+      }
     }
   }
 
@@ -60,12 +94,23 @@ class _AppVersionGateState extends State<AppVersionGate>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     controller.removeListener(_changed);
+    _networkMonitor.removeListener(_networkChanged);
+    _networkMonitor.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final state = controller.value;
+    if (!_networkMonitor.hasChecked) {
+      return const _ConnectionCheckScreen();
+    }
+    if (_showOfflineDownloads(state)) {
+      return const PopScope(
+        canPop: false,
+        child: DownloadsScreen(offlineMode: true),
+      );
+    }
     if (!state.blocksStreaming) return widget.child;
     return PopScope(
       canPop: false,
@@ -73,6 +118,26 @@ class _AppVersionGateState extends State<AppVersionGate>
         state: state,
         controller: controller,
         hasDownloads: hasDownloads,
+      ),
+    );
+  }
+}
+
+class _ConnectionCheckScreen extends StatelessWidget {
+  const _ConnectionCheckScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: DecoratedBox(
+        decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
+        child: Center(
+          child: Semantics(
+            label: 'Checking internet connection',
+            child: CircularProgressIndicator(),
+          ),
+        ),
       ),
     );
   }

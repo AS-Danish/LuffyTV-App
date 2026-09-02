@@ -17,6 +17,7 @@ import 'package:http/http.dart' as http;
 import 'package:luffytv/features/home/data/models/episode.dart';
 import 'package:luffytv/features/home/data/models/watch_data.dart';
 import 'package:luffytv/core/utils/api_constants.dart';
+import 'package:luffytv/core/services/hls_downloader_service.dart';
 
 class AnimeDetailsScreen extends ConsumerStatefulWidget {
   final Anime anime;
@@ -105,122 +106,82 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
               return score(b).compareTo(score(a));
             });
 
-      VideoSource? bestSource;
-      String? masterUrl;
-      List<Map<String, String>> qualities = [];
-      for (final source in sources) {
-        final playable = source.playableUrl;
-        if (playable == null) continue;
-        final candidateUrl = _absoluteDownloadUrl(playable);
-        final isHls =
-            source.m3u8?.trim().isNotEmpty == true ||
-            candidateUrl.toLowerCase().contains('.m3u8');
-        if (!isHls) {
-          bestSource = source;
-          masterUrl = candidateUrl;
-          break;
-        }
-
-        try {
-          final headers = <String, String>{};
-          if (source.proxyUrl?.trim().isEmpty != false &&
-              source.referer?.isNotEmpty == true) {
-            headers['Referer'] = source.referer!;
-          }
-          final response = await http
-              .get(Uri.parse(candidateUrl), headers: headers)
-              .timeout(const Duration(seconds: 12));
-          if (response.statusCode < 200 || response.statusCode >= 300) {
-            throw Exception('Playlist returned ${response.statusCode}.');
-          }
-          final variantBase = source.m3u8?.trim().isNotEmpty == true
-              ? source.m3u8!.trim()
-              : candidateUrl;
-          qualities = _parseDownloadQualities(
-            response.body,
-            variantBase,
-            ep.durationMinutes,
-          );
-          bestSource = source;
-          masterUrl = candidateUrl;
-          break;
-        } catch (error) {
-          lastError = error;
-        }
-      }
-
-      if (bestSource == null || masterUrl == null) {
-        throw lastError ?? Exception('Every download source failed.');
-      }
-      final selectedSource = bestSource;
-      final selectedUrl = masterUrl;
-
       if (context.mounted) Navigator.pop(context); // pop loading
+      if (!context.mounted) return;
 
-      if (qualities.isEmpty) {
-        ref
-            .read(downloadItemsProvider.notifier)
-            .startDownload(
-              anime,
-              ep,
-              selectedUrl,
-              referer: selectedSource.referer,
-            );
-        return;
-      }
-
-      if (context.mounted) {
-        showModalBottomSheet(
-          context: context,
-          backgroundColor: const Color(0xFF1A1A1A),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          builder: (ctx) {
-            return SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Text(
-                      'Select Download Quality',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+      final selectedSource = await showModalBottomSheet<VideoSource>(
+        context: context,
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
+                child: Text(
+                  'Choose audio version',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.bold,
                   ),
-                  ...qualities.map(
-                    (q) => ListTile(
-                      title: Text(
-                        q['resolution']!,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      trailing: const Icon(
-                        Icons.download,
-                        color: AppColors.accentStart,
-                      ),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        ref
-                            .read(downloadItemsProvider.notifier)
-                            .startDownload(
-                              anime,
-                              ep,
-                              q['url']!,
-                              referer: selectedSource.referer,
-                            );
-                      },
-                    ),
-                  ),
-                ],
+                ),
               ),
-            );
-          },
-        );
-      }
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 10),
+                child: Text(
+                  'Available dub languages depend on what the streaming provider exposes.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white54),
+                ),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: sources
+                      .map(
+                        (source) => ListTile(
+                          leading: Icon(
+                            source.type.toLowerCase() == 'dub'
+                                ? Icons.record_voice_over_rounded
+                                : Icons.subtitles_rounded,
+                            color: AppColors.accentStart,
+                          ),
+                          title: Text(
+                            _audioLabel(source),
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            source.server,
+                            style: const TextStyle(color: Colors.white54),
+                          ),
+                          trailing: const Icon(
+                            Icons.chevron_right,
+                            color: Colors.white54,
+                          ),
+                          onTap: () => Navigator.pop(ctx, source),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (selectedSource == null || !context.mounted) return;
+
+      await _configureDownload(
+        context,
+        anime,
+        ep,
+        watchData,
+        selectedSource,
+        ref,
+      );
     } catch (e) {
       if (kDebugMode) debugPrint('Download quality resolution failed: $e');
       if (context.mounted) {
@@ -235,6 +196,131 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
         );
       }
     }
+  }
+
+  Future<void> _configureDownload(
+    BuildContext context,
+    Anime anime,
+    Episode episode,
+    WatchData watchData,
+    VideoSource source,
+    WidgetRef ref,
+  ) async {
+    final playable = source.playableUrl;
+    if (playable == null) return;
+    final masterUrl = _absoluteDownloadUrl(playable);
+    final qualities = <Map<String, String>>[
+      {'resolution': 'Auto / source quality', 'url': masterUrl},
+    ];
+
+    final isHls =
+        source.m3u8?.trim().isNotEmpty == true ||
+        masterUrl.toLowerCase().contains('.m3u8');
+    if (isHls) {
+      try {
+        final response = await http
+            .get(
+              Uri.parse(masterUrl),
+              headers: {
+                if (source.proxyUrl?.trim().isEmpty != false &&
+                    source.referer?.isNotEmpty == true)
+                  'Referer': source.referer!,
+              },
+            )
+            .timeout(const Duration(seconds: 12));
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          final variantBase = source.m3u8?.trim().isNotEmpty == true
+              ? source.m3u8!.trim()
+              : masterUrl;
+          qualities.addAll(
+            _parseDownloadQualities(
+              response.body,
+              variantBase,
+              episode.durationMinutes,
+            ),
+          );
+        }
+      } catch (_) {
+        // The master URL remains a valid auto-quality fallback.
+      }
+    }
+
+    final subtitleChoices = _availableSubtitleChoices(watchData);
+    if (!context.mounted) return;
+    final configuration = await showModalBottomSheet<_DownloadConfiguration>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _DownloadConfigurationSheet(
+        audioLabel: _audioLabel(source),
+        qualities: qualities,
+        subtitles: subtitleChoices,
+      ),
+    );
+    if (configuration == null) return;
+
+    ref
+        .read(downloadItemsProvider.notifier)
+        .startDownload(
+          anime,
+          episode,
+          configuration.videoUrl,
+          referer: source.referer,
+          sourceType: source.type,
+          audioLabel: _audioLabel(source),
+          subtitles: configuration.subtitles
+              .map(
+                (choice) => SubtitleDownloadRequest(
+                  url: choice.url,
+                  label: choice.track.label,
+                  language: choice.track.label,
+                  referer: choice.referer,
+                ),
+              )
+              .toList(),
+          skipData: watchData.skipData,
+        );
+  }
+
+  String _audioLabel(VideoSource source) {
+    final rawType = source.type.trim();
+    final type = rawType.toUpperCase();
+    var language = source.language?.trim();
+    if (type.startsWith('DUB')) {
+      if (language?.isNotEmpty != true) {
+        final suffix = rawType.replaceFirst(
+          RegExp(r'^dub[\s_:-]*', caseSensitive: false),
+          '',
+        );
+        if (suffix.isNotEmpty) language = suffix;
+      }
+      return language?.isNotEmpty == true ? 'DUB • $language' : 'DUB audio';
+    }
+    return type.startsWith('SUB') ? 'SUB • Original audio' : '$type audio';
+  }
+
+  List<_SubtitleChoice> _availableSubtitleChoices(WatchData watchData) {
+    final choices = <_SubtitleChoice>[];
+    final seen = <String>{};
+    for (final source in watchData.sources) {
+      for (final track in source.tracks) {
+        final kind = track.kind.toLowerCase();
+        if (kind != 'captions' && kind != 'subtitles') continue;
+        final rawUrl = track.proxyUrl ?? track.file;
+        if (rawUrl.trim().isEmpty) continue;
+        final url = _absoluteDownloadUrl(rawUrl);
+        // Providers often expose the same language through several servers.
+        // Keep one offline copy per visible language label.
+        if (!seen.add(track.label.trim().toLowerCase())) continue;
+        choices.add(
+          _SubtitleChoice(track: track, url: url, referer: source.referer),
+        );
+      }
+    }
+    return choices;
   }
 
   String _absoluteDownloadUrl(String value) {
@@ -883,6 +969,222 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SubtitleChoice {
+  final VideoTrack track;
+  final String url;
+  final String? referer;
+
+  const _SubtitleChoice({
+    required this.track,
+    required this.url,
+    required this.referer,
+  });
+}
+
+class _DownloadConfiguration {
+  final String videoUrl;
+  final List<_SubtitleChoice> subtitles;
+
+  const _DownloadConfiguration({
+    required this.videoUrl,
+    required this.subtitles,
+  });
+}
+
+class _DownloadConfigurationSheet extends StatefulWidget {
+  final String audioLabel;
+  final List<Map<String, String>> qualities;
+  final List<_SubtitleChoice> subtitles;
+
+  const _DownloadConfigurationSheet({
+    required this.audioLabel,
+    required this.qualities,
+    required this.subtitles,
+  });
+
+  @override
+  State<_DownloadConfigurationSheet> createState() =>
+      _DownloadConfigurationSheetState();
+}
+
+class _DownloadConfigurationSheetState
+    extends State<_DownloadConfigurationSheet> {
+  late String selectedUrl;
+  late Set<int> selectedSubtitles;
+
+  @override
+  void initState() {
+    super.initState();
+    selectedUrl = widget.qualities.first['url']!;
+    selectedSubtitles = {
+      for (var index = 0; index < widget.subtitles.length; index++) index,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.86,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+              child: Column(
+                children: [
+                  const Text(
+                    'Download episode',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 19,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    widget.audioLabel,
+                    style: const TextStyle(color: AppColors.accentStart),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 10, 20, 4),
+                    child: Text(
+                      'VIDEO QUALITY',
+                      style: TextStyle(
+                        color: Colors.white54,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  RadioGroup<String>(
+                    groupValue: selectedUrl,
+                    onChanged: (value) {
+                      if (value != null) setState(() => selectedUrl = value);
+                    },
+                    child: Column(
+                      children: widget.qualities
+                          .map(
+                            (quality) => RadioListTile<String>(
+                              value: quality['url']!,
+                              activeColor: AppColors.accentStart,
+                              title: Text(
+                                quality['resolution']!,
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                  const Divider(color: Colors.white12),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 12, 4),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'OFFLINE SUBTITLES',
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        if (widget.subtitles.isNotEmpty)
+                          TextButton(
+                            onPressed: () => setState(() {
+                              if (selectedSubtitles.length ==
+                                  widget.subtitles.length) {
+                                selectedSubtitles.clear();
+                              } else {
+                                selectedSubtitles = {
+                                  for (
+                                    var index = 0;
+                                    index < widget.subtitles.length;
+                                    index++
+                                  )
+                                    index,
+                                };
+                              }
+                            }),
+                            child: Text(
+                              selectedSubtitles.length ==
+                                      widget.subtitles.length
+                                  ? 'Select none'
+                                  : 'Select all',
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (widget.subtitles.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(20, 12, 20, 20),
+                      child: Text(
+                        'This provider did not return downloadable subtitles for this episode.',
+                        style: TextStyle(color: Colors.white54, height: 1.4),
+                      ),
+                    )
+                  else
+                    ...widget.subtitles.indexed.map(
+                      (entry) => CheckboxListTile(
+                        value: selectedSubtitles.contains(entry.$1),
+                        activeColor: AppColors.accentStart,
+                        title: Text(
+                          entry.$2.track.label,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        subtitle: const Text(
+                          'Saved with the episode for offline switching',
+                          style: TextStyle(color: Colors.white38),
+                        ),
+                        onChanged: (checked) => setState(() {
+                          if (checked == true) {
+                            selectedSubtitles.add(entry.$1);
+                          } else {
+                            selectedSubtitles.remove(entry.$1);
+                          }
+                        }),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.pop(
+                    context,
+                    _DownloadConfiguration(
+                      videoUrl: selectedUrl,
+                      subtitles: selectedSubtitles
+                          .map((index) => widget.subtitles[index])
+                          .toList(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.download_rounded),
+                  label: Text(
+                    selectedSubtitles.isEmpty
+                        ? 'Download without subtitles'
+                        : 'Download with ${selectedSubtitles.length} subtitle${selectedSubtitles.length == 1 ? '' : 's'}',
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

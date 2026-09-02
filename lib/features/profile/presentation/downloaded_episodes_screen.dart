@@ -136,7 +136,8 @@ class DownloadedEpisodesScreen extends ConsumerWidget {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '${episode.durationMinutes}m',
+                                  '${episode.durationMinutes}m • ${item.audioLabel}'
+                                  '${item.subtitles.isEmpty ? '' : ' • ${item.subtitles.length} subtitle${item.subtitles.length == 1 ? '' : 's'}'}',
                                   style: const TextStyle(
                                     color: Colors.white54,
                                     fontSize: 13,

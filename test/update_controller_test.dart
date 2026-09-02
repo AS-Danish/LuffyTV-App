@@ -31,15 +31,20 @@ PackageInfo installedInfo() => PackageInfo(
 
 class FakeRepository extends UpdateRepository {
   final Completer<void>? wait;
+  final bool networkUnavailable;
   int calls = 0;
-  FakeRepository({this.wait})
+  FakeRepository({this.wait, this.networkUnavailable = false})
     : super(manifestUri: Uri.parse('https://updates.example/manifest'));
 
   @override
   Future<UpdateFetchResult> fetch({bool allowCached = true}) async {
     calls++;
     await wait?.future;
-    return UpdateFetchResult(controllerManifest(), fromCache: false);
+    return UpdateFetchResult(
+      controllerManifest(),
+      fromCache: networkUnavailable,
+      networkUnavailable: networkUnavailable,
+    );
   }
 }
 
@@ -157,6 +162,25 @@ void main() {
       wait.complete();
       await Future.wait([first, second]);
       expect(controller.value.status, UpdateStatus.awaitingInstallPermission);
+    },
+  );
+
+  test(
+    'cached manifest preserves offline mode for the downloads gate',
+    () async {
+      final controller = UpdateController(
+        repository: FakeRepository(networkUnavailable: true),
+        downloader: FakeDownloader(),
+        installer: FakeInstaller(),
+        packageInfoLoader: () async => installedInfo(),
+      );
+      controller.value = const AppUpdateState(installedVersionCode: 1);
+
+      await controller.checkForUpdate();
+
+      expect(controller.value.status, UpdateStatus.updateRequired);
+      expect(controller.value.manifestFromCache, isTrue);
+      expect(controller.value.networkUnavailable, isTrue);
     },
   );
 }

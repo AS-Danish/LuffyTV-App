@@ -85,6 +85,7 @@ class AppUpdateState {
   final double bytesPerSecond;
   final String? verifiedApkPath;
   final bool manifestFromCache;
+  final bool networkUnavailable;
 
   const AppUpdateState({
     this.status = UpdateStatus.idle,
@@ -97,6 +98,7 @@ class AppUpdateState {
     this.bytesPerSecond = 0,
     this.verifiedApkPath,
     this.manifestFromCache = false,
+    this.networkUnavailable = false,
   });
 
   bool get blocksStreaming =>
@@ -122,6 +124,7 @@ class AppUpdateState {
     double? bytesPerSecond,
     Object? verifiedApkPath = _unset,
     bool? manifestFromCache,
+    bool? networkUnavailable,
   }) => AppUpdateState(
     status: status ?? this.status,
     manifest: identical(manifest, _unset)
@@ -139,5 +142,6 @@ class AppUpdateState {
         ? this.verifiedApkPath
         : verifiedApkPath as String?,
     manifestFromCache: manifestFromCache ?? this.manifestFromCache,
+    networkUnavailable: networkUnavailable ?? this.networkUnavailable,
   );
 }

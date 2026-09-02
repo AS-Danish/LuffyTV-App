@@ -6,6 +6,7 @@ import 'package:luffytv/features/downloads/data/models/download_item.dart';
 import 'package:luffytv/core/services/hls_downloader_service.dart';
 import 'package:luffytv/features/home/data/models/episode.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
+import 'package:luffytv/features/home/data/models/watch_data.dart';
 
 final downloadItemsProvider =
     NotifierProvider<DownloadNotifier, List<DownloadItem>>(
@@ -48,7 +49,13 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
           resetItems.add(item.copyWith(state: DownloadState.failed));
           continue;
         }
-        resetItems.add(item);
+        final existingSubtitles = <DownloadedSubtitle>[];
+        for (final subtitle in item.subtitles) {
+          if (await File(subtitle.localPath).exists()) {
+            existingSubtitles.add(subtitle);
+          }
+        }
+        resetItems.add(item.copyWith(subtitles: existingSubtitles));
       }
       state = resetItems;
       await _saveToPrefs();
@@ -66,6 +73,10 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     Episode episode,
     String m3u8Url, {
     String? referer,
+    String sourceType = 'sub',
+    String audioLabel = 'Original audio',
+    List<SubtitleDownloadRequest> subtitles = const [],
+    SkipData? skipData,
   }) {
     final id =
         '${anime.id}_${episode.episodeNumber}'; // using anime.id as slug equivalent
@@ -85,24 +96,31 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
       episode: episode,
       state: DownloadState.downloading,
       progress: 0.0,
+      sourceType: sourceType,
+      audioLabel: audioLabel,
+      skipData: skipData,
     );
 
     // Remove existing if it was a failed attempt
     state = [...state.where((item) => item.id != id), newItem];
     _saveToPrefs();
 
-    _executeDownload(id, m3u8Url, referer: referer);
+    _executeDownload(id, m3u8Url, referer: referer, subtitles: subtitles);
   }
 
   Future<void> _executeDownload(
     String id,
     String m3u8Url, {
     String? referer,
+    List<SubtitleDownloadRequest> subtitles = const [],
   }) async {
     final downloader = ref.read(hlsDownloaderProvider);
     await downloader.requestPermissions();
 
     try {
+      // Subtitle proxy links can expire, so save them before the much longer
+      // video transfer starts.
+      final localSubtitles = await downloader.downloadSubtitles(id, subtitles);
       await for (final progress in downloader.downloadEpisode(
         id,
         m3u8Url,
@@ -119,10 +137,21 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
           state: DownloadState.completed,
           progress: 1.0,
           localM3u8Path: localPath,
+          subtitles: localSubtitles
+              .map(
+                (subtitle) => DownloadedSubtitle(
+                  label: subtitle.label,
+                  language: subtitle.language,
+                  localPath: subtitle.localPath,
+                ),
+              )
+              .toList(),
+          failedSubtitleCount: subtitles.length - localSubtitles.length,
         ),
       );
     } catch (e) {
       _updateItem(id, (item) => item.copyWith(state: DownloadState.failed));
+      await _deleteSubtitleDirectory(id);
     }
   }
 
@@ -140,6 +169,7 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
       final file = File(path!);
       if (await file.exists()) await file.delete();
     }
+    await _deleteSubtitleDirectory(id);
   }
 
   Future<void> cancelDownload(String id) async {
@@ -148,5 +178,11 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     final path = await HlsDownloaderService.outputPathFor(id);
     final file = File(path);
     if (await file.exists()) await file.delete();
+    await _deleteSubtitleDirectory(id);
+  }
+
+  Future<void> _deleteSubtitleDirectory(String id) async {
+    final directory = await HlsDownloaderService.subtitleDirectoryFor(id);
+    if (await directory.exists()) await directory.delete(recursive: true);
   }
 }

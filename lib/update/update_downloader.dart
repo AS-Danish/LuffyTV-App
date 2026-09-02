@@ -21,7 +21,12 @@ class UpdateDownloadProgress {
 class UpdateDownloadException implements Exception {
   final String message;
   final bool noSpace;
-  const UpdateDownloadException(this.message, {this.noSpace = false});
+  final bool network;
+  const UpdateDownloadException(
+    this.message, {
+    this.noSpace = false,
+    this.network = false,
+  });
   @override
   String toString() => message;
 }
@@ -182,6 +187,15 @@ class UpdateDownloader {
       sink = null;
       onProgress(UpdateDownloadProgress(downloaded, total, 0));
       return part.path;
+    } on SocketException catch (error) {
+      throw UpdateDownloadException(error.message, network: true);
+    } on http.ClientException catch (error) {
+      throw UpdateDownloadException(error.message, network: true);
+    } on TimeoutException catch (error) {
+      throw UpdateDownloadException(
+        error.message ?? 'The update download timed out.',
+        network: true,
+      );
     } on FileSystemException catch (error) {
       throw UpdateDownloadException(
         error.message,

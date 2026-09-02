@@ -1,8 +1,13 @@
 class WatchData {
   final List<VideoServer> servers;
   final List<VideoSource> sources;
+  final SkipData? skipData;
 
-  const WatchData({required this.servers, required this.sources});
+  const WatchData({
+    required this.servers,
+    required this.sources,
+    this.skipData,
+  });
 
   factory WatchData.fromJson(Map<String, dynamic> json) {
     return WatchData(
@@ -16,7 +21,67 @@ class WatchData {
               ?.map((e) => VideoSource.fromJson(e))
               .toList() ??
           [],
+      skipData: SkipData.fromJsonOrNull(json['skip_data'] ?? json['skipData']),
     );
+  }
+}
+
+class SkipData {
+  final SkipRange? intro;
+  final SkipRange? outro;
+
+  const SkipData({this.intro, this.outro});
+
+  bool get hasAny => intro?.isValid == true || outro?.isValid == true;
+
+  Map<String, dynamic> toJson() => {
+    if (intro != null) 'intro': intro!.toJson(),
+    if (outro != null) 'outro': outro!.toJson(),
+  };
+
+  static SkipData? fromJsonOrNull(Object? value) {
+    if (value is! Map) return null;
+    final data = Map<String, dynamic>.from(value);
+    final result = SkipData(
+      intro: SkipRange.fromJsonOrNull(data['intro']),
+      outro: SkipRange.fromJsonOrNull(data['outro']),
+    );
+    return result.hasAny ? result : null;
+  }
+}
+
+class SkipRange {
+  final double startSeconds;
+  final double endSeconds;
+
+  const SkipRange({required this.startSeconds, required this.endSeconds});
+
+  bool get isValid =>
+      startSeconds >= 0 && endSeconds > startSeconds && endSeconds.isFinite;
+
+  bool contains(Duration position) {
+    final seconds = position.inMilliseconds / 1000;
+    return isValid && seconds >= startSeconds && seconds < endSeconds;
+  }
+
+  Map<String, dynamic> toJson() => {'start': startSeconds, 'end': endSeconds};
+
+  static SkipRange? fromJsonOrNull(Object? value) {
+    num? start;
+    num? end;
+    if (value is Map) {
+      start = value['start'] as num?;
+      end = value['end'] as num?;
+    } else if (value is List && value.length >= 2) {
+      start = value[0] as num?;
+      end = value[1] as num?;
+    }
+    if (start == null || end == null) return null;
+    final range = SkipRange(
+      startSeconds: start.toDouble(),
+      endSeconds: end.toDouble(),
+    );
+    return range.isValid ? range : null;
   }
 }
 
@@ -44,6 +109,7 @@ class VideoSource {
   final String? referer;
   final String? proxyUrl;
   final List<VideoTrack> tracks;
+  final String? language;
 
   const VideoSource({
     required this.server,
@@ -53,6 +119,7 @@ class VideoSource {
     this.referer,
     this.proxyUrl,
     required this.tracks,
+    this.language,
   });
 
   String? get playableUrl {
@@ -85,6 +152,9 @@ class VideoSource {
               ?.map((e) => VideoTrack.fromJson(e))
               .toList() ??
           [],
+      language:
+          (json['language'] ?? json['audioLanguage'] ?? json['dubLanguage'])
+              ?.toString(),
     );
   }
 }

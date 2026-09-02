@@ -49,3 +49,6 @@ app.*.map.json
 .env
 .env.*
 !.env.example
+
+.vercel
+.env*

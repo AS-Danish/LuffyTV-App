@@ -9,7 +9,34 @@ import 'package:ffmpeg_kit_flutter_new/session_state.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:http/http.dart' as http;
 import 'dart:io';
+
+class SubtitleDownloadRequest {
+  final String url;
+  final String label;
+  final String language;
+  final String? referer;
+
+  const SubtitleDownloadRequest({
+    required this.url,
+    required this.label,
+    required this.language,
+    this.referer,
+  });
+}
+
+class SubtitleDownloadResult {
+  final String label;
+  final String language;
+  final String localPath;
+
+  const SubtitleDownloadResult({
+    required this.label,
+    required this.language,
+    required this.localPath,
+  });
+}
 
 class HlsDownloaderService {
   final _notifications = FlutterLocalNotificationsPlugin();
@@ -46,6 +73,91 @@ class HlsDownloaderService {
       await downloadsDir.create(recursive: true);
     }
     return '${downloadsDir.path}/$id.mp4';
+  }
+
+  static Future<Directory> subtitleDirectoryFor(String id) async {
+    final supportDir = await getApplicationSupportDirectory();
+    final directory = Directory('${supportDir.path}/downloads/${id}_subtitles');
+    if (!await directory.exists()) await directory.create(recursive: true);
+    return directory;
+  }
+
+  Future<List<SubtitleDownloadResult>> downloadSubtitles(
+    String id,
+    List<SubtitleDownloadRequest> requests,
+  ) async {
+    if (requests.isEmpty) return const [];
+    final directory = await subtitleDirectoryFor(id);
+    await for (final entity in directory.list()) {
+      if (entity is File) await entity.delete();
+    }
+
+    final client = http.Client();
+    final downloaded = <SubtitleDownloadResult>[];
+    try {
+      for (var index = 0; index < requests.length; index++) {
+        final request = requests[index];
+        try {
+          final uri = Uri.parse(request.url);
+          final response = await client
+              .send(
+                http.Request('GET', uri)
+                  ..followRedirects = true
+                  ..maxRedirects = 5
+                  ..headers.addAll({
+                    'Accept': 'text/vtt, application/x-subrip, text/plain, */*',
+                    if (request.referer?.isNotEmpty == true)
+                      'Referer': request.referer!,
+                  }),
+              )
+              .timeout(const Duration(seconds: 20));
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            continue;
+          }
+          final extension = _subtitleExtension(
+            response.request?.url ?? uri,
+            response.headers['content-type'],
+          );
+          final safeLabel = request.label
+              .replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '_')
+              .replaceAll(RegExp(r'^_+|_+$'), '');
+          final file = File(
+            '${directory.path}/${index + 1}_${safeLabel.isEmpty ? 'subtitle' : safeLabel}.$extension',
+          );
+          final part = File('${file.path}.part');
+          final sink = part.openWrite();
+          await response.stream.pipe(sink);
+          if (await part.length() == 0) {
+            await part.delete();
+            continue;
+          }
+          await part.rename(file.path);
+          downloaded.add(
+            SubtitleDownloadResult(
+              label: request.label,
+              language: request.language,
+              localPath: file.path,
+            ),
+          );
+        } catch (_) {
+          // A broken subtitle must not discard an otherwise playable episode.
+        }
+      }
+    } finally {
+      client.close();
+    }
+    return downloaded;
+  }
+
+  static String _subtitleExtension(Uri uri, String? contentType) {
+    final path = uri.path.toLowerCase();
+    for (final extension in const ['vtt', 'srt', 'ass', 'ssa']) {
+      if (path.endsWith('.$extension')) return extension;
+    }
+    final normalized = contentType?.toLowerCase() ?? '';
+    if (normalized.contains('subrip')) return 'srt';
+    if (normalized.contains('ass')) return 'ass';
+    return 'vtt';
   }
 
   Stream<double> downloadEpisode(
@@ -97,6 +209,9 @@ class HlsDownloaderService {
     }
     arguments.add('-i');
     arguments.add(m3u8Url);
+    // Explicitly retain every audio stream exposed by the selected HLS source.
+    // The previous implicit mapping kept only the first/default audio stream.
+    arguments.addAll(['-map', '0:v:0?', '-map', '0:a?']);
     arguments.add('-c');
     arguments.add('copy');
     arguments.add('-movflags');
