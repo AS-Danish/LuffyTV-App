@@ -18,6 +18,8 @@ import 'package:luffytv/features/home/data/models/episode.dart';
 import 'package:luffytv/features/home/data/models/watch_data.dart';
 import 'package:luffytv/core/utils/api_constants.dart';
 import 'package:luffytv/core/services/hls_downloader_service.dart';
+import 'package:luffytv/core/services/download_source_recovery.dart';
+import 'package:luffytv/core/utils/playback_diagnostics.dart';
 
 class AnimeDetailsScreen extends ConsumerStatefulWidget {
   final Anime anime;
@@ -206,44 +208,69 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
     VideoSource source,
     WidgetRef ref,
   ) async {
-    final playable = source.playableUrl;
-    if (playable == null) return;
-    final masterUrl = _absoluteDownloadUrl(playable);
+    final diagnosticId = PlaybackDiagnostics.newRequestId('download');
+    final repo = ref.read(animeRepositoryProvider);
+    late PreparedDownloadSource prepared;
+    try {
+      prepared = await prepareDownloadSource(
+        selected: source,
+        initial: watchData,
+        refresh: () => repo.fetchWatchData(
+          anime.id,
+          episode.episodeNumber,
+          forceRefresh: true,
+          diagnosticId: diagnosticId,
+        ),
+        loadPlaylist: (candidate) async {
+          final url = _absoluteDownloadUrl(candidate.playableUrl!);
+          if (candidate.m3u8?.isNotEmpty != true &&
+              !url.toLowerCase().contains('.m3u8')) {
+            return null;
+          }
+          final response = await http
+              .get(
+                Uri.parse(url),
+                headers: {
+                  if (candidate.proxyUrl?.isNotEmpty != true &&
+                      candidate.referer?.isNotEmpty == true)
+                    'Referer': candidate.referer!,
+                },
+              )
+              .timeout(const Duration(seconds: 12));
+          PlaybackDiagnostics.log(diagnosticId, 'download.playlist_checked', {
+            'slug': anime.id,
+            'episode': episode.episodeNumber,
+            'host': PlaybackDiagnostics.host(url),
+            'status': response.statusCode,
+          });
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            throw Exception(
+              'The video provider returned HTTP ${response.statusCode}.',
+            );
+          }
+          return response.body;
+        },
+      );
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(PlaybackDiagnostics.safeError(error))),
+        );
+      }
+      return;
+    }
+    source = prepared.source;
+    watchData = prepared.watchData;
+    final masterUrl = _absoluteDownloadUrl(source.playableUrl!);
     final qualities = <Map<String, String>>[
       {'resolution': 'Auto / source quality', 'url': masterUrl},
+      if (prepared.playlist != null)
+        ..._parseDownloadQualities(
+          prepared.playlist!,
+          masterUrl,
+          episode.durationMinutes,
+        ),
     ];
-
-    final isHls =
-        source.m3u8?.trim().isNotEmpty == true ||
-        masterUrl.toLowerCase().contains('.m3u8');
-    if (isHls) {
-      try {
-        final response = await http
-            .get(
-              Uri.parse(masterUrl),
-              headers: {
-                if (source.proxyUrl?.trim().isEmpty != false &&
-                    source.referer?.isNotEmpty == true)
-                  'Referer': source.referer!,
-              },
-            )
-            .timeout(const Duration(seconds: 12));
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          final variantBase = source.m3u8?.trim().isNotEmpty == true
-              ? source.m3u8!.trim()
-              : masterUrl;
-          qualities.addAll(
-            _parseDownloadQualities(
-              response.body,
-              variantBase,
-              episode.durationMinutes,
-            ),
-          );
-        }
-      } catch (_) {
-        // The master URL remains a valid auto-quality fallback.
-      }
-    }
 
     final subtitleChoices = _availableSubtitleChoices(watchData);
     if (!context.mounted) return;

@@ -123,7 +123,12 @@ class VideoSource {
   });
 
   String? get playableUrl {
-    for (final candidate in [proxyUrl, m3u8, url]) {
+    // `url` is normally an HTML embed page, not a media resource.
+    final directUrl = RegExp(
+      r'\.(m3u8|mp4|webm|mkv)(?:$|[?#])',
+      caseSensitive: false,
+    ).hasMatch(url);
+    for (final candidate in [proxyUrl, m3u8, if (directUrl) url]) {
       final value = candidate?.trim() ?? '';
       if (value.isEmpty) continue;
       if (value.startsWith('/')) return value;
@@ -138,6 +143,16 @@ class VideoSource {
   }
 
   bool get isPlayable => playableUrl != null;
+
+  // Ignore proxy signature rotation and server display names when deciding
+  // whether automatic recovery has already tried this exact media resource.
+  String get playbackKey {
+    final proxy = Uri.tryParse(proxyUrl ?? '');
+    final media = m3u8?.trim().isNotEmpty == true
+        ? m3u8!.trim()
+        : proxy?.queryParameters['url'] ?? playableUrl ?? url;
+    return '$type|${referer ?? ''}|$media';
+  }
 
   factory VideoSource.fromJson(Map<String, dynamic> json) {
     return VideoSource(

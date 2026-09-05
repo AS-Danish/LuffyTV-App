@@ -34,6 +34,8 @@ class ApiAnimeRepository implements AnimeRepository {
   final http.Client client;
   final Map<String, _MemoryCacheEntry> _memoryCache = {};
   final Map<String, Future<dynamic>> _inFlight = {};
+  final Map<String, Future<WatchData>> _watchRecoveryInFlight = {};
+  int _watchGeneration = 0;
   final Map<String, _ArtworkCacheEntry> _artworkCache = {};
   Future<void>? _artworkHydration;
   DateTime? _blockedUntil;
@@ -110,7 +112,11 @@ class ApiAnimeRepository implements AnimeRepository {
     return Duration(seconds: delay.clamp(1, 120));
   }
 
-  Future<Map<String, dynamic>> _getJson(Uri uri, {String? diagnosticId}) async {
+  Future<Map<String, dynamic>> _getJson(
+    Uri uri, {
+    String? diagnosticId,
+    Duration? timeout,
+  }) async {
     if (_blockedUntil?.isAfter(DateTime.now()) == true) {
       throw Exception('Anime service is cooling down after rate limiting.');
     }
@@ -129,7 +135,7 @@ class ApiAnimeRepository implements AnimeRepository {
             'X-Playback-Request-Id': ?diagnosticId,
           },
         )
-        .timeout(_requestTimeout);
+        .timeout(timeout ?? _requestTimeout);
     if (diagnosticId != null) {
       PlaybackDiagnostics.log(diagnosticId, 'api.response_received', {
         'status': response.statusCode,
@@ -139,7 +145,9 @@ class ApiAnimeRepository implements AnimeRepository {
       });
     }
     if (response.statusCode == 429) {
-      _blockedUntil = DateTime.now().add(_retryAfter(response));
+      if (uri.queryParameters['recover'] != '1') {
+        _blockedUntil = DateTime.now().add(_retryAfter(response));
+      }
       throw Exception('Anime service rate limit reached.');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -471,18 +479,32 @@ class ApiAnimeRepository implements AnimeRepository {
     final requestId = PlaybackDiagnostics.enabled
         ? diagnosticId ?? PlaybackDiagnostics.newRequestId()
         : null;
-    final key = 'watch:${slug.toLowerCase()}:$episodeNumber';
-    if (forceRefresh) _memoryCache.remove(key);
-    return _cached(
+    final episodeKey = 'watch:${slug.toLowerCase()}:$episodeNumber';
+    final recovering = _watchRecoveryInFlight[episodeKey];
+    if (recovering != null) return recovering;
+    // An older request may finish after recovery. Its generation can never
+    // overwrite the cache entry used by subsequent playback requests.
+    if (forceRefresh) _watchGeneration++;
+    final key = '$episodeKey:$_watchGeneration';
+    final result = _cached<WatchData>(
       key: key,
       freshFor: const Duration(seconds: 45),
-      staleFor: const Duration(minutes: 3),
+      staleFor: Duration.zero,
       load: () async {
         final encodedSlug = Uri.encodeComponent(slug);
-        final uri = Uri.parse(
-          '${ApiConstants.baseUrl}/api/watch/$encodedSlug',
-        ).replace(queryParameters: {'ep': '$episodeNumber', 'stream': 'false'});
-        final response = await _getJson(uri, diagnosticId: requestId);
+        final uri = Uri.parse('${ApiConstants.baseUrl}/api/watch/$encodedSlug')
+            .replace(
+              queryParameters: {
+                'ep': '$episodeNumber',
+                'stream': 'false',
+                if (forceRefresh) 'recover': '1',
+              },
+            );
+        final response = await _getJson(
+          uri,
+          diagnosticId: requestId,
+          timeout: const Duration(seconds: 110),
+        );
         if (response['ok'] == true &&
             response['data'] is Map<String, dynamic>) {
           final data = WatchData.fromJson(
@@ -510,5 +532,18 @@ class ApiAnimeRepository implements AnimeRepository {
       },
       shouldCache: (data) => data.sources.any((source) => source.isPlayable),
     );
+    if (forceRefresh) {
+      _watchRecoveryInFlight[episodeKey] = result;
+      void finished() {
+        if (identical(_watchRecoveryInFlight[episodeKey], result)) {
+          _watchRecoveryInFlight.remove(episodeKey);
+        }
+      }
+
+      unawaited(
+        result.then<void>((_) => finished(), onError: (Object _) => finished()),
+      );
+    }
+    return result;
   }
 }

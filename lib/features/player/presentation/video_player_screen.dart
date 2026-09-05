@@ -58,6 +58,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   Timer? _progressSaveTimer;
   StreamSubscription<String>? _playerErrorSubscription;
   bool _sourceFallbackInProgress = false;
+  final Set<String> _attemptedSources = {};
+  bool _automaticRefreshUsed = false;
   bool _playingLocalFile = false;
   bool _subtitlesEnabled = true;
   late String _playbackRequestId;
@@ -198,8 +200,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   Future<WatchData> _fetchPlayableWatchData({bool forceRefresh = false}) async {
     final repo = ref.read(animeRepositoryProvider);
     Object? lastError;
-    for (var attempt = 0; attempt < 3; attempt++) {
+    final attempts = forceRefresh ? 1 : 2;
+    for (var attempt = 0; attempt < attempts; attempt++) {
       try {
+        if (forceRefresh || attempt > 0) _automaticRefreshUsed = true;
         PlaybackDiagnostics.log(_playbackRequestId, 'player.resolve_attempt', {
           'attempt': attempt + 1,
           'forceRefresh': forceRefresh || attempt > 0,
@@ -231,7 +235,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
           'error': PlaybackDiagnostics.safeError(error),
         });
       }
-      if (attempt < 2) {
+      if (attempt + 1 < attempts) {
         await Future<void>.delayed(
           Duration(milliseconds: attempt == 0 ? 350 : 900),
         );
@@ -252,6 +256,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     Object? lastError;
     for (final source in sources) {
       if (identical(source, exclude)) continue;
+      if (!_attemptedSources.add(source.playbackKey)) continue;
       try {
         PlaybackDiagnostics.log(_playbackRequestId, 'player.source_attempt', {
           'server': source.server,
@@ -291,23 +296,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         _playingLocalFile ||
         _isLoading ||
         _sourceFallbackInProgress ||
+        _error != null ||
         _watchData == null) {
       return;
     }
     _sourceFallbackInProgress = true;
     _savedPosition = player.state.position;
     try {
-      final alternatives = _playableSources(_watchData!);
-      try {
-        await _playFirstAvailable(alternatives, exclude: _currentSource);
-      } catch (_) {
-        final refreshed = await _fetchPlayableWatchData(forceRefresh: true);
-        _watchData = refreshed;
-        await _playFirstAvailable(
-          _playableSources(refreshed),
-          exclude: _currentSource,
-        );
-      }
+      await _playWithRecovery(_watchData!, exclude: _currentSource);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Switched to a working video server.')),
@@ -319,13 +315,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         'fallbackError': PlaybackDiagnostics.safeError(error),
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Playback was interrupted. Tap retry if it continues.',
-            ),
-          ),
-        );
+        setState(() {
+          _error =
+              'All available video sources failed. The video provider '
+              'may be unavailable. Tap retry to check again.';
+          _isLoading = false;
+        });
+        await player.stop();
       }
     } finally {
       _sourceFallbackInProgress = false;
@@ -334,6 +330,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
 
   Future<void> _retryPlayer() async {
     if (_isLoading) return;
+    _attemptedSources.clear();
+    _automaticRefreshUsed = false;
     setState(() {
       _isLoading = true;
       _error = null;
@@ -452,7 +450,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         }
       }
 
-      await _playFirstAvailable(_playableSources(watchData));
+      await _playWithRecovery(watchData);
 
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {
@@ -467,6 +465,22 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _playWithRecovery(WatchData data, {VideoSource? exclude}) async {
+    try {
+      await _playFirstAvailable(_playableSources(data), exclude: exclude);
+    } catch (_) {
+      if (_automaticRefreshUsed) rethrow;
+      _automaticRefreshUsed = true;
+      final refreshed = await _fetchPlayableWatchData(forceRefresh: true);
+      _watchData = refreshed;
+      _skipData = refreshed.skipData;
+      // A renewed signature may repair the same media URL. Allow one fresh
+      // round, while continuing to deduplicate aliases within that round.
+      _attemptedSources.clear();
+      await _playFirstAvailable(_playableSources(refreshed));
     }
   }
 
@@ -496,7 +510,35 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       'captionCount': source.tracks.length,
     });
 
-    await player.open(Media(url, httpHeaders: headers));
+    // Opening a URL only queues it in the native player. Await actual media
+    // progress or an error before reporting that a server works.
+    await player.stop();
+    final ready = Completer<void>();
+    final errors = player.stream.error.listen((message) {
+      if (!ready.isCompleted) ready.completeError(Exception(message));
+    });
+    final positions = player.stream.position.listen((position) {
+      if (position > Duration.zero && !ready.isCompleted) ready.complete();
+    });
+    // Attach the error handler immediately, including while open is pending.
+    final opened = () async {
+      await player.open(Media(url, httpHeaders: headers));
+      await player.play();
+      await ready.future;
+    }();
+    try {
+      await Future.wait([
+        opened,
+        ready.future,
+      ], eagerError: true).timeout(const Duration(seconds: 20));
+    } catch (_) {
+      await player.stop();
+      rethrow;
+    } finally {
+      if (!ready.isCompleted) ready.complete();
+      await errors.cancel();
+      await positions.cancel();
+    }
 
     if (_savedPosition != null) {
       await player.seek(_savedPosition!);
@@ -526,7 +568,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   }
 
   Future<void> _switchSource(VideoSource source) async {
-    if (_isLoading) return;
+    if (_isLoading || _sourceFallbackInProgress) return;
+    _attemptedSources.add(source.playbackKey);
     setState(() {
       _isLoading = true;
       _savedPosition = player.state.position;
