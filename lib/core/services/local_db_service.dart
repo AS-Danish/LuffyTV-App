@@ -8,6 +8,9 @@ class EpisodeProgress {
 
   EpisodeProgress(this.positionSeconds, this.durationSeconds);
 
+  bool get isCompleted =>
+      durationSeconds > 0 && positionSeconds >= durationSeconds - 2;
+
   Map<String, dynamic> toJson() => {
     'positionSeconds': positionSeconds,
     'durationSeconds': durationSeconds,
@@ -95,32 +98,50 @@ class LocalDbService {
 
   static Future<void> saveProgress({
     required String animeSlug,
-    required Anime anime,
+    Anime? anime,
+    String? animeTitle,
+    String? posterUrl,
     required int episodeNumber,
     required Duration position,
     required Duration duration,
+    bool completed = false,
   }) async {
+    if (duration <= Duration.zero) return;
     final box = Hive.box(_progressBoxName);
 
     // Retrieve existing progress or create new episodes map
     Map<String, EpisodeProgress> episodes = {};
+    Anime? storedAnime;
     final existingData = box.get(animeSlug);
     if (existingData != null) {
       final existingProgress = WatchProgress.fromJson(
         jsonDecode(existingData as String),
       );
       episodes = Map.from(existingProgress.episodes);
+      storedAnime = existingProgress.anime;
     }
 
-    // Update the specific episode
+    // Reinsert to retain the order in which episodes were last watched.
+    episodes.remove(episodeNumber.toString());
     episodes[episodeNumber.toString()] = EpisodeProgress(
-      position.inSeconds,
+      completed
+          ? duration.inSeconds
+          : position.inSeconds.clamp(0, duration.inSeconds),
       duration.inSeconds,
     );
 
     final progress = WatchProgress(
       animeSlug: animeSlug,
-      anime: anime,
+      anime:
+          anime ??
+          storedAnime ??
+          Anime(
+            id: animeSlug,
+            title: animeTitle ?? animeSlug,
+            posterUrl: posterUrl,
+            genre: '',
+            year: 0,
+          ),
       lastWatchedEpisode: episodeNumber,
       updatedAt: DateTime.now(),
       episodes: episodes,
@@ -159,6 +180,40 @@ class LocalDbService {
 
   static Future<void> clearWatchHistory() async {
     await Hive.box(_progressBoxName).clear();
+  }
+
+  static Future<void> removeWatchHistory(
+    String slug, {
+    int? episodeNumber,
+  }) async {
+    final box = Hive.box(_progressBoxName);
+    if (episodeNumber == null) {
+      await box.delete(slug);
+      return;
+    }
+    final progress = getProgress(slug);
+    if (progress == null) return;
+    final episodes = Map<String, EpisodeProgress>.from(progress.episodes)
+      ..remove('$episodeNumber');
+    if (episodes.isEmpty) {
+      await box.delete(slug);
+      return;
+    }
+    await box.put(
+      slug,
+      jsonEncode(
+        WatchProgress(
+          animeSlug: slug,
+          anime: progress.anime,
+          lastWatchedEpisode:
+              episodes.containsKey('${progress.lastWatchedEpisode}')
+              ? progress.lastWatchedEpisode
+              : int.parse(episodes.keys.last),
+          updatedAt: progress.updatedAt,
+          episodes: episodes,
+        ).toJson(),
+      ),
+    );
   }
 
   // --- My List ---
@@ -261,5 +316,12 @@ class LocalDbService {
   static Future<void> clearRecentSearches() async {
     final box = Hive.box<List<String>>(_recentSearchesBoxName);
     await box.put('queries', <String>[]);
+  }
+
+  static Future<void> removeSearchQuery(String query) async {
+    final searches = List<String>.from(getRecentSearches())..remove(query);
+    await Hive.box<List<String>>(
+      _recentSearchesBoxName,
+    ).put('queries', searches);
   }
 }

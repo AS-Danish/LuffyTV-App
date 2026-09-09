@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:luffytv/core/services/episode_resume.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,11 +36,36 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
   int _selectedChunkIndex = 0;
   bool _isDescriptionExpanded = false;
   late bool _isInMyList;
+  String? _prefetchedEpisode;
+  late final StreamSubscription<BoxEvent> _historySubscription;
+
+  @override
+  void dispose() {
+    _historySubscription.cancel();
+    super.dispose();
+  }
+
+  void _prefetch(int episode) {
+    final key = '${widget.anime.id}:$episode';
+    if (_prefetchedEpisode == key) return;
+    _prefetchedEpisode = key;
+    final repo = ref.read(animeRepositoryProvider);
+    unawaited(
+      repo
+          .fetchWatchData(widget.anime.id, episode)
+          .then<void>((_) {}, onError: (Object _) {}),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
     _isInMyList = LocalDbService.isInMyList(widget.anime.id);
+    _historySubscription = Hive.box('watch_progress')
+        .watch(key: widget.anime.id)
+        .listen((_) {
+          if (mounted) setState(() {});
+        });
 
     final progress = LocalDbService.getProgress(widget.anime.id);
     if (progress != null && progress.lastWatchedEpisode > 0) {
@@ -309,6 +336,65 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
               )
               .toList(),
           skipData: watchData.skipData,
+          refreshSource: () async {
+            final fresh = await repo.fetchWatchData(
+              anime.id,
+              episode.episodeNumber,
+              forceRefresh: true,
+              diagnosticId: diagnosticId,
+            );
+            final replacement = fresh.sources
+                .where(
+                  (candidate) =>
+                      candidate.isPlayable &&
+                      candidate.type.toLowerCase() ==
+                          source.type.toLowerCase() &&
+                      (candidate.language ?? '').toLowerCase() ==
+                          (source.language ?? '').toLowerCase(),
+                )
+                .firstOrNull;
+            if (replacement == null) {
+              throw Exception('Selected audio is temporarily unavailable.');
+            }
+            var url = _absoluteDownloadUrl(replacement.playableUrl!);
+            if (configuration.videoUrl != masterUrl) {
+              final selectedQuality = qualities
+                  .firstWhere(
+                    (q) => q['url'] == configuration.videoUrl,
+                  )['resolution']!
+                  .split(' ')
+                  .first;
+              final response = await http
+                  .get(
+                    Uri.parse(url),
+                    headers: {
+                      if (replacement.referer?.isNotEmpty == true)
+                        'Referer': replacement.referer!,
+                    },
+                  )
+                  .timeout(const Duration(seconds: 12));
+              if (response.statusCode != 200) {
+                throw Exception('Unable to refresh download quality.');
+              }
+              final match =
+                  _parseDownloadQualities(
+                        response.body,
+                        url,
+                        episode.durationMinutes,
+                      )
+                      .where(
+                        (q) =>
+                            q['resolution']!.split(' ').first ==
+                            selectedQuality,
+                      )
+                      .firstOrNull;
+              if (match == null) {
+                throw Exception('Selected quality is temporarily unavailable.');
+              }
+              url = match['url']!;
+            }
+            return (url: url, referer: replacement.referer);
+          },
         );
   }
 
@@ -406,6 +492,17 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
   Widget build(BuildContext context) {
     final detailAsync = ref.watch(animeDetailProvider(widget.anime.id));
     final episodesAsync = ref.watch(animeEpisodesProvider(widget.anime.id));
+    final target = episodeResume(
+      episodesAsync.asData?.value.map((e) => e.episodeNumber) ?? const <int>[],
+      LocalDbService.getProgress(widget.anime.id),
+    );
+    if (target != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+          _prefetch(target.episode);
+        }
+      });
+    }
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -544,25 +641,29 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                         children: [
                           Expanded(
                             child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => VideoPlayerScreen(
-                                      animeTitle: widget.anime.title,
-                                      animeSlug: widget.anime.id,
-                                      episodeNumber:
-                                          1, // Default to episode 1 for main play button
-                                      anime: widget.anime,
-                                    ),
-                                  ),
-                                );
-                              },
+                              onPressed: target == null
+                                  ? null
+                                  : () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => VideoPlayerScreen(
+                                            animeTitle: widget.anime.title,
+                                            animeSlug: widget.anime.id,
+                                            episodeNumber: target.episode,
+                                            anime: widget.anime,
+                                          ),
+                                        ),
+                                      );
+                                    },
                               icon: const Icon(
                                 Icons.play_arrow,
                                 color: Colors.white,
                               ),
                               label: Text(
-                                'Watch episode 1',
+                                target == null
+                                    ? 'Loading episodes...'
+                                    : '${target.resume ? 'Continue watching' : 'Watch'} ep ${target.episode}',
+                                textAlign: TextAlign.center,
                                 style: AppTextStyles.button,
                               ),
                               style:
@@ -586,26 +687,17 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                             ),
                           ),
                           const SizedBox(width: 16),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _toggleMyList,
-                              icon: Icon(
-                                _isInMyList ? Icons.check : Icons.add,
-                                color: AppColors.textPrimary,
-                              ),
-                              label: Text(
-                                _isInMyList ? 'Saved' : 'My List',
-                                style: AppTextStyles.button,
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: AppColors.border),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    AppRadius.sm,
-                                  ),
+                          IconButton.outlined(
+                            tooltip: _isInMyList
+                                ? 'Remove from My List'
+                                : 'Add to My List',
+                            onPressed: _toggleMyList,
+                            icon: Icon(_isInMyList ? Icons.check : Icons.add),
+                            style: IconButton.styleFrom(
+                              minimumSize: const Size(52, 52),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.sm,
                                 ),
                               ),
                             ),
@@ -918,7 +1010,9 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
 
                                 if (currentDownload != null) {
                                   if (currentDownload.state ==
-                                      DownloadState.downloading) {
+                                          DownloadState.downloading ||
+                                      currentDownload.state ==
+                                          DownloadState.pending) {
                                     return GestureDetector(
                                       onTap: () {
                                         ref

@@ -38,7 +38,17 @@ class VideoPlayerScreen extends ConsumerStatefulWidget {
   ConsumerState<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
 }
 
-class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
+class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
+    with WidgetsBindingObserver {
+  late int _episodeNumber;
+  int? _nextEpisode;
+  bool _episodeCompleted = false;
+  bool _nextPrefetched = false;
+  Timer? _stallTimer;
+  StreamSubscription<Duration>? _positionSubscription;
+  Duration _lastPosition = Duration.zero;
+  DateTime _lastAdvanced = DateTime.now();
+  int _stallRecoveries = 0;
   late final Player player;
   late final VideoController controller;
   bool _isLoading = true;
@@ -57,7 +67,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   Timer? _seekAnimationTimer;
   Timer? _progressSaveTimer;
   StreamSubscription<String>? _playerErrorSubscription;
-  bool _sourceFallbackInProgress = false;
+  StreamSubscription<bool>? _playerCompletedSubscription;
   final Set<String> _attemptedSources = {};
   bool _automaticRefreshUsed = false;
   bool _playingLocalFile = false;
@@ -67,10 +77,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    _episodeNumber = widget.episodeNumber;
+    WidgetsBinding.instance.addObserver(this);
     _playbackRequestId = PlaybackDiagnostics.newRequestId('player');
     PlaybackDiagnostics.log(_playbackRequestId, 'player.screen_opened', {
       'slug': widget.animeSlug,
-      'episode': widget.episodeNumber,
+      'episode': _episodeNumber,
       'local': widget.isLocal,
     });
     WakelockPlus.enable();
@@ -80,11 +92,56 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       DeviceOrientation.landscapeLeft,
     ]);
 
-    player = Player();
+    player = Player(
+      configuration: const PlayerConfiguration(bufferSize: 64 * 1024 * 1024),
+    );
     controller = VideoController(player);
     _playerErrorSubscription = player.stream.error.listen(_handlePlaybackError);
+    _playerCompletedSubscription = player.stream.completed.listen((completed) {
+      if (completed) {
+        _saveProgress(completed: true);
+        if (mounted) setState(() => _episodeCompleted = true);
+      }
+    });
 
     _initPlayer();
+    _findNextEpisode();
+    _positionSubscription = player.stream.position.listen((position) {
+      if (position != _lastPosition) {
+        _lastPosition = position;
+        _lastAdvanced = DateTime.now();
+      }
+      final remaining = player.state.duration - position;
+      if (!_nextPrefetched &&
+          _nextEpisode != null &&
+          !_playingLocalFile &&
+          player.state.duration > Duration.zero &&
+          remaining.inSeconds <= 45 &&
+          !player.state.buffering) {
+        _nextPrefetched = true;
+        unawaited(
+          ref
+              .read(animeRepositoryProvider)
+              .fetchWatchData(widget.animeSlug, _nextEpisode!)
+              .then<void>((_) {}, onError: (Object _) {}),
+        );
+      }
+    });
+    _stallTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted ||
+          _isLoading ||
+          _playingLocalFile ||
+          _episodeCompleted ||
+          !player.state.playing ||
+          !player.state.buffering) {
+        _lastAdvanced = DateTime.now();
+        return;
+      }
+      if (DateTime.now().difference(_lastAdvanced).inSeconds >= 12 &&
+          _stallRecoveries < 2) {
+        unawaited(_recoverStall());
+      }
+    });
     _initBrightness();
 
     // Save progress periodically
@@ -93,16 +150,120 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     });
   }
 
-  void _saveProgress() {
-    if (widget.anime != null && player.state.duration > Duration.zero) {
-      LocalDbService.saveProgress(
+  Future<void> _findNextEpisode() async {
+    final current = _episodeNumber;
+    try {
+      final numbers = widget.isLocal
+          ? (await DownloadNotifier.loadStoredDownloads())
+                .where(
+                  (d) =>
+                      d.animeSlug == widget.animeSlug &&
+                      d.state == DownloadState.completed,
+                )
+                .map((d) => d.episode.episodeNumber)
+                .toList()
+          : (await ref
+                    .read(animeRepositoryProvider)
+                    .fetchAnimeEpisodes(widget.animeSlug))
+                .map((e) => e.episodeNumber)
+                .toList();
+      numbers.sort();
+      if (mounted && current == _episodeNumber) {
+        setState(
+          () => _nextEpisode = numbers.where((n) => n > current).firstOrNull,
+        );
+      }
+    } catch (_) {
+      /* Playback remains usable if episode metadata is unavailable. */
+    }
+  }
+
+  Future<void> _playNextEpisode() async {
+    final next = _nextEpisode;
+    if (next == null || _isLoading) return;
+    setState(() => _isLoading = true);
+    await _saveProgress(completed: _episodeCompleted);
+    await player.stop();
+    if (!mounted) return;
+    setState(() {
+      _episodeNumber = next;
+      _nextEpisode = null;
+      _episodeCompleted = false;
+      _nextPrefetched = false;
+      _savedPosition = null;
+      _watchData = null;
+      _currentSource = null;
+      _localDownload = null;
+      _error = null;
+      _attemptedSources.clear();
+      _automaticRefreshUsed = false;
+      _stallRecoveries = 0;
+    });
+    unawaited(_findNextEpisode());
+    await _initPlayer();
+  }
+
+  Future<void> _recoverStall() async {
+    final source = _currentSource;
+    if (_isLoading || source == null) return;
+    _stallRecoveries++;
+    setState(() {
+      _isLoading = true;
+      _savedPosition = player.state.position;
+    });
+    try {
+      final native = player.platform;
+      if (native is NativePlayer) {
+        await native.setProperty('hls-bitrate', 'min');
+      }
+      final fresh = await _fetchPlayableWatchData(forceRefresh: true);
+      if (!mounted) return;
+      _watchData = fresh;
+      _attemptedSources.clear();
+      await _playFirstAvailable(
+        _playableSources(fresh).where(
+          (candidate) =>
+              candidate.type.toLowerCase() == source.type.toLowerCase() &&
+              (candidate.language ?? '').toLowerCase() ==
+                  (source.language ?? '').toLowerCase(),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'This stream stalled. Retry or choose another server.',
+        );
+      }
+    } finally {
+      _lastAdvanced = DateTime.now();
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _saveProgress({bool completed = false}) async {
+    try {
+      await LocalDbService.saveProgress(
         animeSlug: widget.animeSlug,
-        anime: widget.anime!,
-        episodeNumber: widget.episodeNumber,
+        anime: widget.anime,
+        animeTitle: _localDownload?.animeTitle ?? widget.animeTitle,
+        posterUrl: _localDownload?.posterUrl,
+        episodeNumber: _episodeNumber,
         position: player.state.position,
         duration: player.state.duration,
+        completed: completed || player.state.completed,
+      );
+    } catch (error) {
+      PlaybackDiagnostics.log(
+        _playbackRequestId,
+        'player.progress_save_failed',
+        {'error': PlaybackDiagnostics.safeError(error)},
       );
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _saveProgress();
   }
 
   Future<void> _initBrightness() async {
@@ -119,6 +280,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   Future<void> _loadPlaybackPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     _subtitlesEnabled = prefs.getBool('playback_subtitles') ?? true;
+    final native = player.platform;
+    if (native is NativePlayer) {
+      // A bounded read-ahead absorbs short CDN stalls without waiting for it to fill.
+      await native.setProperty('cache', 'yes');
+      await native.setProperty('cache-secs', '60');
+      await native.setProperty('demuxer-max-back-bytes', '${8 * 1024 * 1024}');
+      await native.setProperty(
+        'hls-bitrate',
+        (prefs.getBool('playback_high_quality') ?? false) ? 'max' : '2500000',
+      );
+    }
   }
 
   void _triggerSeekAnimation(String side) {
@@ -210,7 +382,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         });
         final watchData = await repo.fetchWatchData(
           widget.animeSlug,
-          widget.episodeNumber,
+          _episodeNumber,
           forceRefresh: forceRefresh || attempt > 0,
           diagnosticId: _playbackRequestId,
         );
@@ -291,41 +463,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       'positionSeconds': player.state.position.inSeconds,
       'error': PlaybackDiagnostics.safeError(message),
     });
-    if (!mounted ||
-        widget.isLocal ||
-        _playingLocalFile ||
-        _isLoading ||
-        _sourceFallbackInProgress ||
-        _error != null ||
-        _watchData == null) {
-      return;
-    }
-    _sourceFallbackInProgress = true;
-    _savedPosition = player.state.position;
-    try {
-      await _playWithRecovery(_watchData!, exclude: _currentSource);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Switched to a working video server.')),
-        );
-      }
-    } catch (error) {
-      PlaybackDiagnostics.log(_playbackRequestId, 'player.fallback_failed', {
-        'originalError': PlaybackDiagnostics.safeError(message),
-        'fallbackError': PlaybackDiagnostics.safeError(error),
-      });
-      if (mounted) {
-        setState(() {
-          _error =
-              'All available video sources failed. The video provider '
-              'may be unavailable. Tap retry to check again.';
-          _isLoading = false;
-        });
-        await player.stop();
-      }
-    } finally {
-      _sourceFallbackInProgress = false;
-    }
+    // Native error events also include recoverable segment/subtitle errors.
+    // Keep the selected server; changing it requires an explicit user action.
   }
 
   Future<void> _retryPlayer() async {
@@ -340,7 +479,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     _playbackRequestId = PlaybackDiagnostics.newRequestId('retry');
     PlaybackDiagnostics.log(_playbackRequestId, 'player.manual_retry', {
       'slug': widget.animeSlug,
-      'episode': widget.episodeNumber,
+      'episode': _episodeNumber,
     });
     await _initPlayer(forceRefresh: true);
   }
@@ -348,22 +487,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   Future<void> _initPlayer({bool forceRefresh = false}) async {
     try {
       await _loadPlaybackPreferences();
-      final downloadId = '${widget.animeSlug}_${widget.episodeNumber}';
+      final downloadId = '${widget.animeSlug}_$_episodeNumber';
       final downloads = ref.read(downloadItemsProvider);
       var localItem = downloads
           .where(
             (d) => d.id == downloadId && d.state == DownloadState.completed,
           )
           .firstOrNull;
-      if (widget.isLocal && localItem == null) {
-        localItem = (await DownloadNotifier.loadStoredDownloads())
-            .where(
-              (item) =>
-                  item.id == downloadId &&
-                  item.state == DownloadState.completed,
-            )
-            .firstOrNull;
-      }
+      localItem ??= (await DownloadNotifier.loadStoredDownloads())
+          .where(
+            (item) =>
+                item.id == downloadId && item.state == DownloadState.completed,
+          )
+          .firstOrNull;
 
       // If the file is downloaded (or forced local), play the local file
       if (widget.isLocal || localItem != null) {
@@ -377,9 +513,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
         // Restore progress
         final savedProgress = LocalDbService.getProgress(widget.animeSlug);
         if (savedProgress != null) {
-          final epProgress =
-              savedProgress.episodes[widget.episodeNumber.toString()];
-          if (epProgress != null) {
+          final epProgress = savedProgress.episodes[_episodeNumber.toString()];
+          if (epProgress != null && !epProgress.isCompleted) {
             _savedPosition = Duration(seconds: epProgress.positionSeconds);
           }
         }
@@ -396,37 +531,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
           _setDownloadedSubtitle(null);
         }
 
-        // Refresh optional server/skip metadata when online. Offline subtitle
-        // switching always uses the files persisted with the download.
-        try {
-          final watchData = await _fetchPlayableWatchData(
-            forceRefresh: forceRefresh,
-          );
-          _watchData = watchData;
-          _skipData ??= watchData.skipData;
-          final playableSources = _playableSources(watchData);
-          final bestSource = playableSources.firstOrNull;
-          if (bestSource != null) {
-            _currentSource = bestSource;
-            final captions = _captionTracks(bestSource);
-            if (localItem.subtitles.isEmpty &&
-                _subtitlesEnabled &&
-                captions.isNotEmpty) {
-              final firstCaption = captions.first;
-              final subUrl = _absoluteApiUrl(
-                firstCaption.proxyUrl ?? firstCaption.file,
-              );
-              player.setSubtitleTrack(
-                SubtitleTrack.uri(
-                  subUrl,
-                  title: firstCaption.label,
-                  language: firstCaption.label,
-                ),
-              );
-              _currentSubtitleTrack = firstCaption;
-            }
-          }
-        } catch (_) {}
+        // Saved media and subtitles are self-contained. Network metadata must
+        // never delay the video surface while local audio is already playing.
+        _watchData = null;
+        _currentSource = null;
 
         if (mounted) setState(() => _isLoading = false);
         return;
@@ -443,9 +551,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       // Check if we have saved progress to resume from
       final savedProgress = LocalDbService.getProgress(widget.animeSlug);
       if (savedProgress != null) {
-        final epProgress =
-            savedProgress.episodes[widget.episodeNumber.toString()];
-        if (epProgress != null) {
+        final epProgress = savedProgress.episodes[_episodeNumber.toString()];
+        if (epProgress != null && !epProgress.isCompleted) {
           _savedPosition = Duration(seconds: epProgress.positionSeconds);
         }
       }
@@ -518,11 +625,15 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       if (!ready.isCompleted) ready.completeError(Exception(message));
     });
     final positions = player.stream.position.listen((position) {
-      if (position > Duration.zero && !ready.isCompleted) ready.complete();
+      if (position > (_savedPosition ?? Duration.zero) && !ready.isCompleted) {
+        ready.complete();
+      }
     });
     // Attach the error handler immediately, including while open is pending.
     final opened = () async {
-      await player.open(Media(url, httpHeaders: headers));
+      await player.open(
+        Media(url, httpHeaders: headers, start: _savedPosition),
+      );
       await player.play();
       await ready.future;
     }();
@@ -538,10 +649,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
       if (!ready.isCompleted) ready.complete();
       await errors.cancel();
       await positions.cancel();
-    }
-
-    if (_savedPosition != null) {
-      await player.seek(_savedPosition!);
     }
 
     await player.play();
@@ -568,7 +675,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
   }
 
   Future<void> _switchSource(VideoSource source) async {
-    if (_isLoading || _sourceFallbackInProgress) return;
+    if (_isLoading) return;
     _attemptedSources.add(source.playbackKey);
     setState(() {
       _isLoading = true;
@@ -844,6 +951,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
     _progressSaveTimer?.cancel();
     _seekAnimationTimer?.cancel();
     _playerErrorSubscription?.cancel();
+    _playerCompletedSubscription?.cancel();
+    _positionSubscription?.cancel();
+    _stallTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     player.dispose();
     WakelockPlus.disable();
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -916,7 +1027,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '${widget.animeTitle} - Episode ${widget.episodeNumber}',
+                '${widget.animeTitle} - Episode $_episodeNumber',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -1079,6 +1190,29 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen> {
                   );
                 },
               ),
+              if (_episodeCompleted && _nextEpisode != null)
+                Positioned(
+                  right: 24,
+                  bottom: 40,
+                  child: SafeArea(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: FilledButton.icon(
+                        onPressed: _isLoading ? null : _playNextEpisode,
+                        icon: const Icon(Icons.skip_next_rounded),
+                        label: Text('Play next episode · Ep $_nextEpisode'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               if (_isFastForwarding)
                 const Positioned(
                   top: 32,

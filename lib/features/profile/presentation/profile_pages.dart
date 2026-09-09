@@ -14,6 +14,49 @@ class WatchHistoryScreen extends StatefulWidget {
 }
 
 class _WatchHistoryScreenState extends State<WatchHistoryScreen> {
+  Future<void> _editHistory(WatchProgress item) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * .65,
+          child: ListView(
+            children: [
+              ListTile(
+                title: Text(item.anime.title),
+                subtitle: const Text('Remove an episode or the entire anime'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Remove anime from history'),
+                onTap: () async {
+                  await LocalDbService.removeWatchHistory(item.animeSlug);
+                  if (context.mounted) Navigator.pop(context);
+                },
+              ),
+              for (final number
+                  in (item.episodes.keys.map(int.parse).toList()..sort())
+                      .reversed)
+                ListTile(
+                  title: Text('Episode $number'),
+                  trailing: const Icon(Icons.close_rounded),
+                  onTap: () async {
+                    await LocalDbService.removeWatchHistory(
+                      item.animeSlug,
+                      episodeNumber: number,
+                    );
+                    if (context.mounted) Navigator.pop(context);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final history = LocalDbService.getAllProgress();
@@ -79,7 +122,11 @@ class _WatchHistoryScreenState extends State<WatchHistoryScreen> {
                       ],
                     ),
                   ),
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                  trailing: IconButton(
+                    tooltip: 'Manage watch history',
+                    icon: const Icon(Icons.more_horiz_rounded),
+                    onPressed: () => _editHistory(item),
+                  ),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => AnimeDetailsScreen(anime: item.anime),
@@ -102,7 +149,7 @@ class PlaybackSettingsScreen extends StatefulWidget {
 class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
   bool subtitles = true;
   bool autoplay = true;
-  bool highQuality = true;
+  bool highQuality = false;
 
   @override
   void initState() {
@@ -112,7 +159,7 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
       setState(() {
         subtitles = prefs.getBool('playback_subtitles') ?? true;
         autoplay = prefs.getBool('playback_autoplay') ?? true;
-        highQuality = prefs.getBool('playback_high_quality') ?? true;
+        highQuality = prefs.getBool('playback_high_quality') ?? false;
       });
     });
   }
@@ -148,7 +195,7 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
         ),
         _SwitchTile(
           'Prefer highest quality',
-          'Use the clearest stream available',
+          'Off uses balanced quality for smoother streaming',
           highQuality,
           (value) {
             setState(() => highQuality = value);

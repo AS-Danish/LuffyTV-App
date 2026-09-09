@@ -69,6 +69,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             color: AppColors.accentStart,
             backgroundColor: AppColors.surfaceRaised,
             onRefresh: () async {
+              try {
+                await ref.read(animeRepositoryProvider).refreshHome();
+              } catch (_) {
+                return; // Keep the visible saved catalog when offline.
+              }
+              if (!context.mounted) return;
+              ref.invalidate(featuredAnimeProvider);
               ref.invalidate(editorsPicksProvider);
               ref.invalidate(trendingNowProvider);
               ref.invalidate(newEpisodesProvider);

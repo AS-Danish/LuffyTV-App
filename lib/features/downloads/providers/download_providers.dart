@@ -15,6 +15,8 @@ final downloadItemsProvider =
 
 class DownloadNotifier extends Notifier<List<DownloadItem>> {
   static const _prefsKey = 'luffytv_downloads';
+  final Map<String, Object> _jobs = {};
+  Future<void> _queue = Future<void>.value();
 
   static Future<List<DownloadItem>> loadStoredDownloads() async {
     final prefs = await SharedPreferences.getInstance();
@@ -39,7 +41,8 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
       // Ensure anything that was 'downloading' when app closed is reset to 'failed' or 'pending'
       final resetItems = <DownloadItem>[];
       for (final item in items) {
-        if (item.state == DownloadState.downloading) {
+        if (item.state == DownloadState.downloading ||
+            item.state == DownloadState.pending) {
           resetItems.add(item.copyWith(state: DownloadState.failed));
           continue;
         }
@@ -57,7 +60,11 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
         }
         resetItems.add(item.copyWith(subtitles: existingSubtitles));
       }
-      state = resetItems;
+      final currentIds = state.map((item) => item.id).toSet();
+      state = [
+        ...resetItems.where((item) => !currentIds.contains(item.id)),
+        ...state,
+      ];
       await _saveToPrefs();
     }
   }
@@ -77,6 +84,7 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     String audioLabel = 'Original audio',
     List<SubtitleDownloadRequest> subtitles = const [],
     SkipData? skipData,
+    Future<({String url, String? referer})> Function()? refreshSource,
   }) {
     final id =
         '${anime.id}_${episode.episodeNumber}'; // using anime.id as slug equivalent
@@ -94,7 +102,7 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
       animeTitle: anime.title,
       posterUrl: anime.posterUrl,
       episode: episode,
-      state: DownloadState.downloading,
+      state: DownloadState.pending,
       progress: 0.0,
       sourceType: sourceType,
       audioLabel: audioLabel,
@@ -105,7 +113,19 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     state = [...state.where((item) => item.id != id), newItem];
     _saveToPrefs();
 
-    _executeDownload(id, m3u8Url, referer: referer, subtitles: subtitles);
+    final job = Object();
+    _jobs[id] = job;
+    _queue = _queue.then((_) async {
+      if (!identical(_jobs[id], job)) return;
+      await _executeDownload(
+        id,
+        m3u8Url,
+        job: job,
+        referer: referer,
+        subtitles: subtitles,
+        refreshSource: refreshSource,
+      );
+    });
   }
 
   Future<void> _executeDownload(
@@ -113,21 +133,46 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
     String m3u8Url, {
     String? referer,
     List<SubtitleDownloadRequest> subtitles = const [],
+    required Object job,
+    Future<({String url, String? referer})> Function()? refreshSource,
   }) async {
     final downloader = ref.read(hlsDownloaderProvider);
-    await downloader.requestPermissions();
-
     try {
+      await downloader.requestPermissions();
+      if (!identical(_jobs[id], job)) return;
+      _updateItem(
+        id,
+        (item) => item.copyWith(state: DownloadState.downloading),
+      );
       // Subtitle proxy links can expire, so save them before the much longer
       // video transfer starts.
       final localSubtitles = await downloader.downloadSubtitles(id, subtitles);
-      await for (final progress in downloader.downloadEpisode(
-        id,
-        m3u8Url,
-        referer: referer,
-      )) {
-        _updateItem(id, (item) => item.copyWith(progress: progress));
+      if (!identical(_jobs[id], job)) return;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          await for (final progress in downloader.downloadEpisode(
+            id,
+            m3u8Url,
+            referer: referer,
+          )) {
+            if (!identical(_jobs[id], job)) {
+              await downloader.cancelDownload(id);
+              return;
+            }
+            _updateItem(id, (item) => item.copyWith(progress: progress));
+          }
+          break;
+        } catch (_) {
+          if (!identical(_jobs[id], job)) return;
+          if (attempt == 1 || refreshSource == null) rethrow;
+          final refreshed = await refreshSource();
+          if (!identical(_jobs[id], job)) return;
+          m3u8Url = refreshed.url;
+          referer = refreshed.referer;
+          _updateItem(id, (item) => item.copyWith(progress: 0));
+        }
       }
+      if (!identical(_jobs[id], job)) return;
 
       final localPath = await HlsDownloaderService.outputPathFor(id);
 
@@ -150,8 +195,22 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
         ),
       );
     } catch (e) {
-      _updateItem(id, (item) => item.copyWith(state: DownloadState.failed));
-      await _deleteSubtitleDirectory(id);
+      if (!identical(_jobs[id], job)) return;
+      _updateItem(
+        id,
+        (item) => item.copyWith(
+          state: DownloadState.failed,
+          errorMessage:
+              'Download could not finish. Check your connection and retry from the episode page.',
+        ),
+      );
+      try {
+        await _deleteSubtitleDirectory(id);
+      } catch (_) {
+        /* Cleanup must not block the queue. */
+      }
+    } finally {
+      if (identical(_jobs[id], job)) _jobs.remove(id);
     }
   }
 
@@ -161,6 +220,8 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
   }
 
   Future<void> removeDownload(String id) async {
+    _jobs.remove(id);
+    await ref.read(hlsDownloaderProvider).cancelDownload(id);
     final item = state.where((entry) => entry.id == id).firstOrNull;
     state = state.where((item) => item.id != id).toList();
     await _saveToPrefs();
@@ -173,6 +234,7 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
   }
 
   Future<void> cancelDownload(String id) async {
+    _jobs.remove(id);
     await ref.read(hlsDownloaderProvider).cancelDownload(id);
     _updateItem(id, (item) => item.copyWith(state: DownloadState.failed));
     final path = await HlsDownloaderService.outputPathFor(id);

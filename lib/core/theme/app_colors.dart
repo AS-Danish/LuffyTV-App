@@ -23,13 +23,13 @@ class AppColors {
   static const textMuted = Color(0xFF73757F);
 
   static const accentGradient = LinearGradient(
-    colors: [accentStart, accentEnd],
+    colors: [accentStart, accentStart],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const backgroundGradient = LinearGradient(
-    colors: [Color(0xFF17120F), Color(0xFF0D0E12), bg],
+    colors: [Color(0xFF111113), bg, bg],
     stops: [0.0, 0.32, 1.0],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,

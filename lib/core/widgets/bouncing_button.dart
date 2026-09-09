@@ -12,15 +12,16 @@ class BouncingButton extends StatefulWidget {
     super.key,
     required this.child,
     this.onTap,
-    this.scaleFactor = 0.95,
-    this.duration = const Duration(milliseconds: 100),
+    this.scaleFactor = 0.98,
+    this.duration = const Duration(milliseconds: 160),
   });
 
   @override
   State<BouncingButton> createState() => _BouncingButtonState();
 }
 
-class _BouncingButtonState extends State<BouncingButton> with SingleTickerProviderStateMixin {
+class _BouncingButtonState extends State<BouncingButton>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
@@ -28,9 +29,10 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: widget.duration);
-    _scaleAnimation = Tween<double>(begin: 1.0, end: widget.scaleFactor).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: widget.scaleFactor,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -64,7 +66,9 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
       child: AnimatedBuilder(
         animation: _scaleAnimation,
         builder: (context, child) => Transform.scale(
-          scale: _scaleAnimation.value,
+          scale: MediaQuery.disableAnimationsOf(context)
+              ? 1
+              : _scaleAnimation.value,
           child: child,
         ),
         child: widget.child,

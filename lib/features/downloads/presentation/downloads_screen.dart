@@ -128,6 +128,14 @@ class DownloadsScreen extends ConsumerWidget {
                                       ),
                                     ),
                                   ] else if (item.state ==
+                                      DownloadState.pending) ...[
+                                    const Text(
+                                      'Queued',
+                                      style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ] else if (item.state ==
                                       DownloadState.completed) ...[
                                     Text(
                                       'Downloaded',
@@ -138,7 +146,8 @@ class DownloadsScreen extends ConsumerWidget {
                                   ] else if (item.state ==
                                       DownloadState.failed) ...[
                                     Text(
-                                      'Failed',
+                                      item.errorMessage ??
+                                          'Failed. Retry from the episode page.',
                                       style: AppTextStyles.caption.copyWith(
                                         color: Colors.redAccent,
                                       ),

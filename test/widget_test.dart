@@ -28,15 +28,15 @@ void main() {
     );
 
     expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Discover'), findsOneWidget);
+    expect(find.text('Search'), findsOneWidget);
     expect(find.text('My List'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
 
-    await tester.tap(find.text('Discover'));
+    await tester.tap(find.text('Search'));
     await tester.pumpAndSettle();
 
     final container = ProviderScope.containerOf(
-      tester.element(find.text('Discover')),
+      tester.element(find.text('Search')),
     );
     expect(container.read(selectedNavIndexProvider), 1);
   });

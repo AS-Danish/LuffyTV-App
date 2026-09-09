@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:luffytv/core/services/local_db_service.dart';
+import 'package:luffytv/core/services/catalog_cache.dart';
 import 'package:luffytv/core/utils/api_constants.dart';
 import 'package:luffytv/core/utils/playback_diagnostics.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
@@ -32,6 +33,8 @@ class _ArtworkCacheEntry {
 
 class ApiAnimeRepository implements AnimeRepository {
   final http.Client client;
+  final CatalogCache catalogCache;
+  final void Function()? onCatalogUpdated;
   final Map<String, _MemoryCacheEntry> _memoryCache = {};
   final Map<String, Future<dynamic>> _inFlight = {};
   final Map<String, Future<WatchData>> _watchRecoveryInFlight = {};
@@ -47,7 +50,11 @@ class ApiAnimeRepository implements AnimeRepository {
   static const _negativeArtworkCacheDuration = Duration(minutes: 15);
   static final _anilistUri = Uri.parse('https://graphql.anilist.co');
 
-  ApiAnimeRepository({required this.client});
+  ApiAnimeRepository({
+    required this.client,
+    CatalogCache? catalogCache,
+    this.onCatalogUpdated,
+  }) : catalogCache = catalogCache ?? CatalogCache();
 
   Future<T> _cached<T>({
     required String key,
@@ -113,6 +120,24 @@ class ApiAnimeRepository implements AnimeRepository {
   }
 
   Future<Map<String, dynamic>> _getJson(
+    Uri uri, {
+    String? diagnosticId,
+    Duration? timeout,
+  }) => catalogCache.get(
+    uri,
+    () => _requestJson(uri, diagnosticId: diagnosticId, timeout: timeout),
+    onUpdated: () {
+      _memoryCache.removeWhere(
+        (key, _) =>
+            key == 'home' ||
+            key.startsWith('detail:') ||
+            key.startsWith('episodes:'),
+      );
+      onCatalogUpdated?.call();
+    },
+  );
+
+  Future<Map<String, dynamic>> _requestJson(
     Uri uri, {
     String? diagnosticId,
     Duration? timeout,
@@ -324,6 +349,13 @@ class ApiAnimeRepository implements AnimeRepository {
     staleFor: const Duration(hours: 6),
     load: _doFetchHomeData,
   );
+
+  @override
+  Future<void> refreshHome() async {
+    final uri = Uri.parse('${ApiConstants.baseUrl}/api/home');
+    await catalogCache.get(uri, () => _requestJson(uri), forceRefresh: true);
+    _memoryCache.remove('home');
+  }
 
   Future<Map<String, dynamic>> _doFetchHomeData() async {
     final response = await _getJson(

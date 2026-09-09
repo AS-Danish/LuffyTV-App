@@ -1,4 +1,7 @@
+import 'dart:convert';
+import 'hls_duration.dart';
 import 'dart:async';
+import 'download_validation.dart';
 import 'package:flutter/foundation.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -126,7 +129,7 @@ class HlsDownloaderService {
           );
           final part = File('${file.path}.part');
           final sink = part.openWrite();
-          await response.stream.pipe(sink);
+          await response.stream.timeout(const Duration(seconds: 20)).pipe(sink);
           if (await part.length() == 0) {
             await part.delete();
             continue;
@@ -160,6 +163,49 @@ class HlsDownloaderService {
     return 'vtt';
   }
 
+  Future<double?> _playlistDuration(String url, String? referer) async {
+    final client = http.Client();
+    try {
+      return await (() async {
+        var uri = Uri.parse(url);
+        for (var depth = 0; depth < 3; depth++) {
+          final response = await client.send(
+            http.Request('GET', uri)
+              ..headers.addAll({
+                if (referer?.isNotEmpty == true) 'Referer': referer!,
+              }),
+          );
+          if (response.statusCode != 200) return null;
+          final bytes = <int>[];
+          await for (final chunk in response.stream) {
+            bytes.addAll(chunk);
+            if (bytes.length > 2 * 1024 * 1024) return null;
+          }
+          final text = utf8.decode(bytes, allowMalformed: true);
+          final duration = hlsVodDuration(text);
+          if (duration != null) return duration;
+          final lines = text.split(RegExp(r'\r?\n'));
+          final index = lines.indexWhere(
+            (line) => line.startsWith('#EXT-X-STREAM-INF:'),
+          );
+          if (index < 0) return null;
+          final variant = lines
+              .skip(index + 1)
+              .map((line) => line.trim())
+              .where((line) => line.isNotEmpty && !line.startsWith('#'))
+              .firstOrNull;
+          if (variant == null) return null;
+          uri = (response.request?.url ?? uri).resolve(variant);
+        }
+        return null;
+      })().timeout(const Duration(seconds: 15));
+    } catch (_) {
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+
   Stream<double> downloadEpisode(
     String id,
     String m3u8Url, {
@@ -169,55 +215,84 @@ class HlsDownloaderService {
 
     final outputPath = await outputPathFor(id);
     final notificationId = id.hashCode;
+    final partialPath = '$outputPath.part.mp4';
 
     // Check if already exists
     if (File(outputPath).existsSync()) {
       File(outputPath).deleteSync();
     }
 
-    // Attempt to get duration using FFprobe
-    int totalDurationMs =
-        1440000; // Default to 24 mins for Anime if probe fails
-    try {
-      final sessionInfo = await FFprobeKit.getMediaInformation(m3u8Url);
-      final mediaInfo = sessionInfo.getMediaInformation();
-      if (mediaInfo != null) {
-        final durationStr = mediaInfo.getDuration();
-        if (durationStr != null) {
-          totalDurationMs = (double.parse(durationStr) * 1000).toInt();
-        }
-      }
-    } catch (e) {
-      // Ignore and use default 24 mins
+    // Probe with the same access headers as the transfer. An assumed episode
+    // length is not evidence that a download is complete.
+    final inputOptions = <String>[
+      '-rw_timeout',
+      '15000000',
+      if (referer != null && referer.isNotEmpty) ...[
+        '-headers',
+        'Referer: $referer\r\n',
+      ],
+      if (m3u8Url.toLowerCase().contains('.m3u8')) ...[
+        '-allowed_segment_extensions',
+        'ALL',
+        '-extension_picky',
+        '0',
+      ],
+    ];
+    final probe = await FFprobeKit.getMediaInformationFromCommandArguments([
+      '-v',
+      'error',
+      '-print_format',
+      'json',
+      '-show_format',
+      '-show_streams',
+      ...inputOptions,
+      '-i',
+      m3u8Url,
+    ]);
+    final probedSeconds = double.tryParse(
+      probe.getMediaInformation()?.getDuration() ?? '',
+    );
+    final expectedSeconds =
+        probedSeconds != null && probedSeconds.isFinite && probedSeconds > 0
+        ? probedSeconds
+        : await _playlistDuration(m3u8Url, referer);
+    if (expectedSeconds == null ||
+        !expectedSeconds.isFinite ||
+        expectedSeconds <= 0) {
+      throw Exception(
+        'Cannot verify episode length. Please retry the download.',
+      );
     }
-    if (totalDurationMs <= 0) totalDurationMs = 1440000;
+    final totalDurationMs = expectedSeconds * 1000;
 
     double currentProgress = 0.0;
     int currentSizeInBytes = 0;
 
-    final arguments = <String>[];
-    if (referer != null && referer.isNotEmpty) {
-      arguments.add('-headers');
-      arguments.add('Referer: $referer\r\n');
-    }
-    final isHls = m3u8Url.toLowerCase().contains('.m3u8');
-    if (isHls) {
-      arguments.add('-allowed_segment_extensions');
-      arguments.add('ALL');
-      arguments.add('-extension_picky');
-      arguments.add('0');
-    }
+    final arguments = <String>[
+      '-xerror',
+      ...inputOptions,
+      '-reconnect',
+      '1',
+      '-reconnect_streamed',
+      '1',
+      '-reconnect_on_network_error',
+      '1',
+      '-reconnect_on_http_error',
+      '429,500,502,503,504',
+      '-reconnect_delay_max',
+      '5',
+    ];
     arguments.add('-i');
     arguments.add(m3u8Url);
     // Explicitly retain every audio stream exposed by the selected HLS source.
     // The previous implicit mapping kept only the first/default audio stream.
-    arguments.addAll(['-map', '0:v:0?', '-map', '0:a?']);
+    arguments.addAll(['-map', '0:v:0', '-map', '0:a?']);
     arguments.add('-c');
     arguments.add('copy');
     arguments.add('-movflags');
     arguments.add('+faststart');
     arguments.add('-y');
-    arguments.add(outputPath);
+    arguments.add(partialPath);
 
     final session = await FFmpegKit.executeWithArgumentsAsync(
       arguments,
@@ -274,24 +349,37 @@ class HlsDownloaderService {
       );
     }
 
-    // fake progress fallback if stats fail
-    double fakeProgress = 0.0;
-
     while (true) {
       await Future.delayed(const Duration(milliseconds: 1000));
       final state = await session.getState();
-
-      if (currentProgress == 0.0) {
-        fakeProgress += 0.01;
-        if (fakeProgress > 0.15) fakeProgress = 0.15;
-      }
-      final displayProgress = currentProgress > 0.0
-          ? currentProgress
-          : fakeProgress;
+      final displayProgress = currentProgress;
 
       if (state == SessionState.completed || state == SessionState.failed) {
         final returnCode = await session.getReturnCode();
         if (ReturnCode.isSuccess(returnCode)) {
+          try {
+            final saved = (await FFprobeKit.getMediaInformation(
+              partialPath,
+            )).getMediaInformation();
+            final video = saved
+                ?.getStreams()
+                .where((stream) => stream.getType() == 'video')
+                .firstOrNull;
+            validateDownloadedVideo(
+              expectedSeconds: expectedSeconds,
+              videoSeconds: double.tryParse(
+                video?.getStringProperty('duration') ?? '',
+              ),
+              fileBytes: await File(partialPath).length(),
+            );
+            await File(partialPath).rename(outputPath);
+          } catch (_) {
+            _activeSessions.remove(id);
+            await _notifications.cancel(id: notificationId);
+            final partial = File(partialPath);
+            if (await partial.exists()) await partial.delete();
+            rethrow;
+          }
           _notifications.show(
             id: notificationId,
             title: 'Download Complete',
@@ -322,6 +410,8 @@ class HlsDownloaderService {
             ),
           );
           _activeSessions.remove(id);
+          final partial = File(partialPath);
+          if (await partial.exists()) await partial.delete();
           final failLog = await session.getFailStackTrace();
           throw Exception(
             'Download failed with state: $state, error: $failLog',

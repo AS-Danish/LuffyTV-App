@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:luffytv/core/services/catalog_cache.dart';
+import 'package:luffytv/core/utils/api_constants.dart';
 import 'package:luffytv/core/services/network_monitor.dart';
 import 'package:luffytv/core/theme/app_colors.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
@@ -102,7 +104,10 @@ class _AppVersionGateState extends State<AppVersionGate>
   @override
   Widget build(BuildContext context) {
     final state = controller.value;
-    if (!_networkMonitor.hasChecked) {
+    if (!_networkMonitor.hasChecked &&
+        !CatalogCache().hasUsableHome(
+          Uri.parse('${ApiConstants.baseUrl}/api/home'),
+        )) {
       return const _ConnectionCheckScreen();
     }
     if (_showOfflineDownloads(state)) {

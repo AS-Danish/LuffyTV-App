@@ -43,6 +43,7 @@ class DownloadItem {
   final List<DownloadedSubtitle> subtitles;
   final int failedSubtitleCount;
   final SkipData? skipData;
+  final String? errorMessage;
 
   const DownloadItem({
     required this.id,
@@ -59,6 +60,7 @@ class DownloadItem {
     this.subtitles = const [],
     this.failedSubtitleCount = 0,
     this.skipData,
+    this.errorMessage,
   });
 
   DownloadItem copyWith({
@@ -71,6 +73,7 @@ class DownloadItem {
     List<DownloadedSubtitle>? subtitles,
     int? failedSubtitleCount,
     SkipData? skipData,
+    String? errorMessage,
   }) {
     return DownloadItem(
       id: id,
@@ -87,6 +90,7 @@ class DownloadItem {
       subtitles: subtitles ?? this.subtitles,
       failedSubtitleCount: failedSubtitleCount ?? this.failedSubtitleCount,
       skipData: skipData ?? this.skipData,
+      errorMessage: errorMessage ?? this.errorMessage,
     );
   }
 
@@ -109,6 +113,7 @@ class DownloadItem {
       'subtitles': subtitles.map((subtitle) => subtitle.toJson()).toList(),
       'failedSubtitleCount': failedSubtitleCount,
       'skipData': skipData?.toJson(),
+      'errorMessage': errorMessage,
     };
   }
 
@@ -147,6 +152,7 @@ class DownloadItem {
           const [],
       failedSubtitleCount: (json['failedSubtitleCount'] as num?)?.toInt() ?? 0,
       skipData: SkipData.fromJsonOrNull(json['skipData']),
+      errorMessage: json['errorMessage'] as String?,
     );
   }
 }

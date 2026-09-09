@@ -8,6 +8,7 @@ import 'package:luffytv/features/home/data/models/watch_data.dart';
 /// never on a concrete implementation. This is the one seam that lets
 /// you plug in a real backend later by writing one new class.
 abstract class AnimeRepository {
+  Future<void> refreshHome();
   Future<Anime> fetchFeatured();
   Future<List<Anime>> fetchEditorsPicks();
   Future<List<Anime>> fetchTrendingNow();
@@ -93,6 +94,8 @@ Anime _enrichAnime(Anime base) {
 /// Placeholder implementation with fake data + a simulated network
 /// delay, so loading states are visible and honest during development.
 class MockAnimeRepository implements AnimeRepository {
+  @override
+  Future<void> refreshHome() async {}
   @override
   Future<Anime> fetchFeatured() async {
     await Future.delayed(const Duration(milliseconds: 400));

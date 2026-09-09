@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:luffytv/core/services/local_db_service.dart';
+import 'package:luffytv/core/services/catalog_cache.dart';
 import 'package:luffytv/core/widgets/cached_artwork_image.dart';
 import 'package:luffytv/core/widgets/app_version_gate.dart';
 
@@ -18,6 +19,7 @@ Future<void> main() async {
   MediaKit.ensureInitialized();
 
   await LocalDbService.init();
+  await CatalogCache.init();
 
   PaintingBinding.instance.imageCache.maximumSize = 800;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 96 * 1024 * 1024;

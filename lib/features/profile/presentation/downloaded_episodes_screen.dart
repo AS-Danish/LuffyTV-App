@@ -162,10 +162,36 @@ class DownloadedEpisodesScreen extends ConsumerWidget {
                               Icons.delete_outline,
                               color: Colors.white54,
                             ),
-                            onPressed: () {
-                              ref
+                            onPressed: () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (dialogContext) => AlertDialog(
+                                  title: const Text(
+                                    'Delete downloaded episode?',
+                                  ),
+                                  content: Text(
+                                    'Remove ${episode.title} from this device? '
+                                    'You will need to download it again to watch offline.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dialogContext, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dialogContext, true),
+                                      child: const Text('Delete'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirmed != true || !context.mounted) return;
+                              await ref
                                   .read(downloadItemsProvider.notifier)
                                   .removeDownload(item.id);
+                              if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(

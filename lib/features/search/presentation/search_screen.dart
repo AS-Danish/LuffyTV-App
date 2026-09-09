@@ -36,6 +36,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final normalized = query.trim();
     setState(() => _isSearching = normalized.isNotEmpty);
     _debounce?.cancel();
+    if (normalized.isEmpty) {
+      ref.read(searchQueryProvider.notifier).state = '';
+      return;
+    }
     _debounce = Timer(const Duration(milliseconds: 500), () {
       if (normalized.length >= 2) LocalDbService.saveSearchQuery(normalized);
       ref.read(searchQueryProvider.notifier).state = normalized;
@@ -84,10 +88,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           ),
                         ),
                         const SizedBox(height: 5),
-                        Text(
-                          'What are you in the mood for?',
-                          style: AppTextStyles.heroTitle,
-                        ),
+                        Text('Search', style: AppTextStyles.heroTitle),
                         const SizedBox(height: 18),
                         TextField(
                           controller: _searchController,
@@ -99,7 +100,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           ),
                           onChanged: _onSearchChanged,
                           decoration: InputDecoration(
-                            hintText: 'Search titles, genres, or moods',
+                            hintText: 'Search anime',
                             prefixIcon: const Icon(
                               Icons.search_rounded,
                               color: AppColors.textMuted,
@@ -185,7 +186,7 @@ class _SearchLanding extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Explore a vibe', style: AppTextStyles.sectionTitle),
+                    Text('Browse genres', style: AppTextStyles.sectionTitle),
                     const SizedBox(height: 13),
                     Wrap(
                       spacing: 9,
@@ -193,11 +194,6 @@ class _SearchLanding extends StatelessWidget {
                       children: suggestions
                           .map(
                             (query) => ActionChip(
-                              avatar: const Icon(
-                                Icons.auto_awesome_rounded,
-                                size: 15,
-                                color: AppColors.accentEnd,
-                              ),
                               label: Text(query),
                               onPressed: () => onQuerySelected(query),
                             ),
@@ -234,10 +230,11 @@ class _SearchLanding extends StatelessWidget {
                               color: AppColors.textPrimary,
                             ),
                           ),
-                          trailing: const Icon(
-                            Icons.north_west_rounded,
-                            color: AppColors.textMuted,
-                            size: 18,
+                          trailing: IconButton(
+                            tooltip: 'Remove search',
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                            onPressed: () =>
+                                LocalDbService.removeSearchQuery(query),
                           ),
                           onTap: () => onQuerySelected(query),
                         ),

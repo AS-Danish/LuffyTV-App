@@ -16,8 +16,8 @@ class AppRadius {
   AppRadius._();
   static const xs = 8.0;
   static const sm = 12.0;
-  static const md = 16.0;
-  static const lg = 24.0;
+  static const md = 12.0;
+  static const lg = 18.0;
   static const xl = 32.0;
   static const full = 999.0;
 }
@@ -30,18 +30,18 @@ class AppTextStyles {
   static final display = _base.copyWith(
     fontSize: 34,
     height: 1.05,
-    fontWeight: FontWeight.w900,
+    fontWeight: FontWeight.w700,
     letterSpacing: -1.2,
   );
   static final heroTitle = _base.copyWith(
     fontSize: 28,
     height: 1.08,
-    fontWeight: FontWeight.w800,
+    fontWeight: FontWeight.w700,
     letterSpacing: -0.8,
   );
   static final sectionTitle = _base.copyWith(
     fontSize: 20,
-    fontWeight: FontWeight.w800,
+    fontWeight: FontWeight.w700,
     letterSpacing: -0.35,
   );
   static final cardTitle = _base.copyWith(
@@ -63,13 +63,13 @@ class AppTextStyles {
   );
   static final label = _base.copyWith(
     fontSize: 11,
-    fontWeight: FontWeight.w800,
+    fontWeight: FontWeight.w700,
     letterSpacing: 0.7,
     color: AppColors.textMuted,
   );
   static final button = const TextStyle(
     fontSize: 14,
-    fontWeight: FontWeight.w800,
+    fontWeight: FontWeight.w700,
     color: Colors.white,
   );
 }

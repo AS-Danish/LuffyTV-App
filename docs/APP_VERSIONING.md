@@ -13,8 +13,12 @@ Use the sideload flavor for private APK releases:
 
 ```powershell
 flutter run --flavor sideload
-flutter build apk --release --flavor sideload
+.\tool\build_arm64_release.ps1
 ```
+
+Production sideload APKs support `arm64-v8a` only. This covers modern 64-bit
+Android phones while excluding ARMv7/32-bit phones and x86 Android emulators.
+Normal debug builds are unchanged unless the ARM64 release script is used.
 
 Debug builds do not contact the updater unless explicitly enabled:
 
@@ -22,7 +26,8 @@ Debug builds do not contact the updater unless explicitly enabled:
 flutter run --flavor sideload --dart-define=ENABLE_SELF_UPDATER=true
 ```
 
-An `.aab` or split APK set cannot be installed by this single-APK updater. Publish a universal signed APK.
+An `.aab` or split APK set cannot be installed by this single-APK updater.
+Publish the single signed ARM64 APK produced by `build_arm64_release.ps1`.
 
 ## Manifest JSON
 
@@ -64,10 +69,10 @@ The client rejects optional manifests, insecure APK URLs, invalid hashes, imposs
 
    ```powershell
    flutter test
-   flutter build apk --release --flavor sideload
+   .\tool\build_arm64_release.ps1
    ```
 
-3. Locate the universal APK under `build\app\outputs\flutter-apk\` and upload it to the final HTTPS release URL. Upload the APK **before** changing the manifest.
+3. Upload the versioned ARM64 APK printed by the build script, such as `build\app\outputs\flutter-apk\luffytv-1.4.0-build14-arm64.apk`, to the final HTTPS release URL. Upload the APK **before** changing the manifest. Do not use `app-release.apk` or an APK built without the ARM64 release script.
 
 4. Verify the public URL downloads the APK, not an HTML error page.
 
@@ -75,13 +80,13 @@ The client rejects optional manifests, insecure APK URLs, invalid hashes, imposs
 
    ```powershell
    .\tool\prepare_update_release.ps1 `
-     -ApkPath .\build\app\outputs\flutter-apk\app-sideload-release.apk `
+     -ApkPath .\build\app\outputs\flutter-apk\luffytv-1.4.0-build14-arm64.apk `
      -Version 1.4.0 `
      -VersionCode 14 `
      -HttpsUrl https://releases.example.com/luffy-tv-1.4.0.apk
    ```
 
-6. Configure and deploy the API:
+Then configure and deploy the API manually:
 
    ```text
    ANDROID_VERSION=1.4.0
@@ -95,7 +100,10 @@ The client rejects optional manifests, insecure APK URLs, invalid hashes, imposs
    ANDROID_PUBLISHED_AT=2026-08-25T00:00:00Z
    ```
 
-7. Verify `/api/app-version` and download/hash the public APK independently before telling users to relaunch the app.
+Verify `/api/app-version` and download/hash the public APK independently before telling users to relaunch the app.
+
+The release-preparation script rejects APKs containing ARMv7 or x86 native
+libraries, which prevents accidentally republishing a large universal APK.
 
 Publishing the manifest is the manual control that activates the compulsory update. There is no optional flag to accidentally configure.
 
