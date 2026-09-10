@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:luffytv/core/services/app_telemetry.dart';
 import 'package:flutter/material.dart';
 import 'package:luffytv/core/utils/api_constants.dart';
 import 'package:luffytv/core/utils/playback_diagnostics.dart';
@@ -46,6 +47,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   bool _nextPrefetched = false;
   Timer? _stallTimer;
   StreamSubscription<Duration>? _positionSubscription;
+  StreamSubscription<bool>? _bufferingSubscription;
+  Stopwatch? _bufferingTimer;
   Duration _lastPosition = Duration.zero;
   DateTime _lastAdvanced = DateTime.now();
   int _stallRecoveries = 0;
@@ -96,7 +99,28 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       configuration: const PlayerConfiguration(bufferSize: 64 * 1024 * 1024),
     );
     controller = VideoController(player);
+    final firstFrameTimer = Stopwatch()..start();
+    unawaited(
+      controller.waitUntilFirstFrameRendered.then((_) {
+        if (!mounted) return;
+        PlaybackDiagnostics.log(_playbackRequestId, 'player.first_frame', {
+          'elapsedMs': firstFrameTimer.elapsedMilliseconds,
+        });
+      }, onError: (Object _) {}),
+    );
     _playerErrorSubscription = player.stream.error.listen(_handlePlaybackError);
+    _bufferingSubscription = player.stream.buffering.listen((buffering) {
+      if (buffering && !_isLoading) {
+        _bufferingTimer ??= Stopwatch()..start();
+      } else if (!buffering && _bufferingTimer != null) {
+        AppTelemetry.duration(
+          'player_rebuffer',
+          _bufferingTimer!.elapsedMilliseconds,
+          server: _currentSource?.server,
+        );
+        _bufferingTimer = null;
+      }
+    });
     _playerCompletedSubscription = player.stream.completed.listen((completed) {
       if (completed) {
         _saveProgress(completed: true);
@@ -285,6 +309,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       // A bounded read-ahead absorbs short CDN stalls without waiting for it to fill.
       await native.setProperty('cache', 'yes');
       await native.setProperty('cache-secs', '60');
+      await native.setProperty('cache-pause-initial', 'no');
+      await native.setProperty('cache-pause-wait', '1');
       await native.setProperty('demuxer-max-back-bytes', '${8 * 1024 * 1024}');
       await native.setProperty(
         'hls-bitrate',
@@ -400,7 +426,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           return watchData;
         }
         lastError = Exception('The API returned an empty source list.');
-      } catch (error) {
+      } catch (error, stack) {
+        AppTelemetry.report(
+          'player.resolve_failed',
+          error,
+          stack: stack,
+          context: {
+            'requestId': _playbackRequestId,
+            'attempt': attempt + 1,
+            'stage': 'source_resolution',
+          },
+        );
         lastError = error;
         PlaybackDiagnostics.log(_playbackRequestId, 'player.resolve_failed', {
           'attempt': attempt + 1,
@@ -443,7 +479,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           'host': PlaybackDiagnostics.host(source.playableUrl),
         });
         return source;
-      } catch (error) {
+      } catch (error, stack) {
+        AppTelemetry.report(
+          'player.source_failed',
+          error,
+          stack: stack,
+          context: {
+            'requestId': _playbackRequestId,
+            'server': source.server,
+            'host': PlaybackDiagnostics.host(source.playableUrl),
+          },
+        );
         lastError = error;
         PlaybackDiagnostics.log(_playbackRequestId, 'player.source_failed', {
           'server': source.server,
@@ -486,7 +532,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   Future<void> _initPlayer({bool forceRefresh = false}) async {
     try {
-      await _loadPlaybackPreferences();
+      // Preferences/native configuration and disk metadata are independent.
+      final initialization = await Future.wait<Object?>([
+        _loadPlaybackPreferences(),
+        DownloadNotifier.loadStoredDownloads(),
+      ]);
       final downloadId = '${widget.animeSlug}_$_episodeNumber';
       final downloads = ref.read(downloadItemsProvider);
       var localItem = downloads
@@ -494,7 +544,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             (d) => d.id == downloadId && d.state == DownloadState.completed,
           )
           .firstOrNull;
-      localItem ??= (await DownloadNotifier.loadStoredDownloads())
+      localItem ??= (initialization[1] as List<DownloadItem>)
           .where(
             (item) =>
                 item.id == downloadId && item.state == DownloadState.completed,
@@ -560,7 +610,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       await _playWithRecovery(watchData);
 
       if (mounted) setState(() => _isLoading = false);
-    } catch (e) {
+    } catch (e, stack) {
+      AppTelemetry.report(
+        'player.initialization_failed',
+        e,
+        stack: stack,
+        context: {'requestId': _playbackRequestId},
+      );
       PlaybackDiagnostics.log(
         _playbackRequestId,
         'player.initialization_failed',
@@ -619,6 +675,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
     // Opening a URL only queues it in the native player. Await actual media
     // progress or an error before reporting that a server works.
+    final startup = Stopwatch()..start();
     await player.stop();
     final ready = Completer<void>();
     final errors = player.stream.error.listen((message) {
@@ -626,6 +683,10 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     });
     final positions = player.stream.position.listen((position) {
       if (position > (_savedPosition ?? Duration.zero) && !ready.isCompleted) {
+        PlaybackDiagnostics.log(_playbackRequestId, 'player.first_progress', {
+          'elapsedMs': startup.elapsedMilliseconds,
+          'server': source.server,
+        });
         ready.complete();
       }
     });
@@ -953,6 +1014,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _playerErrorSubscription?.cancel();
     _playerCompletedSubscription?.cancel();
     _positionSubscription?.cancel();
+    _bufferingSubscription?.cancel();
     _stallTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     player.dispose();
@@ -964,15 +1026,6 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(
-          child: CircularProgressIndicator(color: AppColors.accentStart),
-        ),
-      );
-    }
-
     if (_error != null) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -1115,6 +1168,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         fullscreen: const MaterialVideoControlsThemeData(),
         child: GestureDetector(
           onDoubleTapDown: (details) {
+            if (_isLoading) return;
             final screenWidth = MediaQuery.of(context).size.width;
             if (details.globalPosition.dx > screenWidth / 2) {
               final pos = player.state.position + const Duration(seconds: 10);
@@ -1129,6 +1183,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             }
           },
           onLongPressStart: (_) {
+            if (_isLoading) return;
             player.setRate(2.0);
             setState(() {
               _isFastForwarding = true;
@@ -1144,7 +1199,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
             children: [
               Video(
                 controller: controller,
-                controls: MaterialVideoControls,
+                controls: _isLoading ? NoVideoControls : MaterialVideoControls,
                 subtitleViewConfiguration: const SubtitleViewConfiguration(
                   style: TextStyle(
                     height: 1.4,
@@ -1159,6 +1214,19 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   padding: EdgeInsets.only(left: 24, right: 24, bottom: 30),
                 ),
               ),
+              if (_isLoading)
+                const Positioned.fill(
+                  child: AbsorbPointer(
+                    child: ColoredBox(
+                      color: Colors.black,
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.accentStart,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               StreamBuilder<Duration>(
                 stream: player.stream.position,
                 initialData: player.state.position,
@@ -1166,7 +1234,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   final action = _activeSkipAction(
                     snapshot.data ?? Duration.zero,
                   );
-                  if (action == null) return const SizedBox.shrink();
+                  if (_isLoading || action == null) {
+                    return const SizedBox.shrink();
+                  }
                   return Positioned(
                     right: 24,
                     bottom: 104,

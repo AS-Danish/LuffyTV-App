@@ -13,9 +13,30 @@ import 'package:luffytv/core/services/local_db_service.dart';
 import 'package:luffytv/core/services/catalog_cache.dart';
 import 'package:luffytv/core/widgets/cached_artwork_image.dart';
 import 'package:luffytv/core/widgets/app_version_gate.dart';
+import 'package:luffytv/core/services/app_telemetry.dart';
 
-Future<void> main() async {
+void main() {
+  runZonedGuarded(_startApp, (error, stack) {
+    AppTelemetry.report('app.uncaught', error, stack: stack, fatal: true);
+  });
+}
+
+Future<void> _startApp() async {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterError.onError = (details) {
+    if (kDebugMode) FlutterError.presentError(details);
+    AppTelemetry.report(
+      'flutter.framework_error',
+      details.exception,
+      stack: details.stack,
+      fatal: false,
+    );
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    AppTelemetry.report('dart.uncaught', error, stack: stack, fatal: true);
+    return true;
+  };
+  unawaited(AppTelemetry.initialize());
   MediaKit.ensureInitialized();
 
   await LocalDbService.init();
@@ -35,7 +56,8 @@ Future<void> main() async {
     if (supabaseUrl.isNotEmpty && supabaseKey.isNotEmpty) {
       await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
     }
-  } catch (e) {
+  } catch (e, stack) {
+    AppTelemetry.report('startup.supabase_failed', e, stack: stack);
     if (kDebugMode) {
       debugPrint('Failed to initialize optional Supabase services: $e');
     }

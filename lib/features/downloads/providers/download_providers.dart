@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:luffytv/core/services/app_telemetry.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:luffytv/features/downloads/data/models/download_item.dart';
@@ -194,8 +195,14 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
           failedSubtitleCount: subtitles.length - localSubtitles.length,
         ),
       );
-    } catch (e) {
+    } catch (e, stack) {
       if (!identical(_jobs[id], job)) return;
+      AppTelemetry.report(
+        'download.failed',
+        e,
+        stack: stack,
+        context: {'host': Uri.tryParse(m3u8Url)?.host},
+      );
       _updateItem(
         id,
         (item) => item.copyWith(

@@ -346,7 +346,7 @@ class _SearchMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(32, 20, 32, 120),
         child: Column(
           mainAxisSize: MainAxisSize.min,

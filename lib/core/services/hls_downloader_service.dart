@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'app_telemetry.dart';
+import 'telemetry_sanitizer.dart';
 import 'hls_duration.dart';
 import 'dart:async';
 import 'download_validation.dart';
@@ -115,6 +117,11 @@ class HlsDownloaderService {
               )
               .timeout(const Duration(seconds: 20));
           if (response.statusCode < 200 || response.statusCode >= 300) {
+            AppTelemetry.report(
+              'subtitle.download_failed',
+              'Subtitle HTTP failure',
+              context: {'status': response.statusCode, 'host': uri.host},
+            );
             continue;
           }
           final extension = _subtitleExtension(
@@ -142,7 +149,13 @@ class HlsDownloaderService {
               localPath: file.path,
             ),
           );
-        } catch (_) {
+        } catch (error, stack) {
+          AppTelemetry.report(
+            'subtitle.download_failed',
+            error,
+            stack: stack,
+            context: {'host': Uri.tryParse(request.url)?.host},
+          );
           // A broken subtitle must not discard an otherwise playable episode.
         }
       }
@@ -294,12 +307,20 @@ class HlsDownloaderService {
     arguments.add('-y');
     arguments.add(partialPath);
 
+    String? lastMediaError;
     final session = await FFmpegKit.executeWithArgumentsAsync(
       arguments,
       (session) async {},
       (log) {
+        final message = TelemetrySanitizer.text(log.getMessage());
+        if (RegExp(
+          r'error|failed|invalid|dimensions not set|HTTP error',
+          caseSensitive: false,
+        ).hasMatch(message)) {
+          lastMediaError = message;
+        }
         if (kDebugMode) {
-          debugPrint('FFmpeg Log: ${log.getMessage()}');
+          debugPrint('FFmpeg Log: $message');
         }
       },
       (statistics) {
@@ -414,7 +435,7 @@ class HlsDownloaderService {
           if (await partial.exists()) await partial.delete();
           final failLog = await session.getFailStackTrace();
           throw Exception(
-            'Download failed with state: $state, error: $failLog',
+            'Download failed with state: $state, error: ${lastMediaError ?? TelemetrySanitizer.text(failLog)}',
           );
         }
         break;

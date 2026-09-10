@@ -6,6 +6,7 @@ import 'package:luffytv/core/services/local_db_service.dart';
 import 'package:luffytv/core/services/catalog_cache.dart';
 import 'package:luffytv/core/utils/api_constants.dart';
 import 'package:luffytv/core/utils/playback_diagnostics.dart';
+import 'package:luffytv/core/services/app_telemetry.dart';
 import 'package:luffytv/features/home/data/models/anime.dart';
 import 'package:luffytv/features/home/data/models/episode.dart';
 import 'package:luffytv/features/home/data/repository/anime_repository.dart';
@@ -138,6 +139,28 @@ class ApiAnimeRepository implements AnimeRepository {
   );
 
   Future<Map<String, dynamic>> _requestJson(
+    Uri uri, {
+    String? diagnosticId,
+    Duration? timeout,
+  }) async {
+    try {
+      return await _performRequestJson(
+        uri,
+        diagnosticId: diagnosticId,
+        timeout: timeout,
+      );
+    } catch (error, stack) {
+      AppTelemetry.report(
+        'api.request_failed',
+        error,
+        stack: stack,
+        context: {'host': uri.host, 'requestId': diagnosticId},
+      );
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> _performRequestJson(
     Uri uri, {
     String? diagnosticId,
     Duration? timeout,

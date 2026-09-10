@@ -5,6 +5,8 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 
 val keystoreProperties = Properties()
@@ -59,6 +61,7 @@ android {
 
     defaultConfig {
         applicationId = "com.luffytv.luffytv"
+        manifestPlaceholders["crashlyticsCollectionEnabled"] = "false"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -96,6 +99,7 @@ android {
 
     buildTypes {
         release {
+            manifestPlaceholders["crashlyticsCollectionEnabled"] = "true"
             signingConfig = signingConfigs.findByName("release")
         }
     }
@@ -112,5 +116,8 @@ flutter {
 }
 
 dependencies {
+    // Align with firebase_core's BoM; native crashes include media_kit/FFmpeg.
+    implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
+    implementation("com.google.firebase:firebase-crashlytics-ndk")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "59600381999",
+    "project_id": "luffy-tv-90bd6",
+    "storage_bucket": "luffy-tv-90bd6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:59600381999:android:55ecc4d2dbf94526a6beda",
+        "android_client_info": {
+          "package_name": "com.luffytv.luffytv"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCQHQX1Zz19FHHxclLX2KTlF8megNLTwoo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
