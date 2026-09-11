@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'app_telemetry.dart';
 import 'telemetry_sanitizer.dart';
+import '../utils/playback_diagnostics.dart';
 import 'hls_duration.dart';
 import 'dart:async';
 import 'download_validation.dart';
@@ -245,30 +246,40 @@ class HlsDownloaderService {
         'Referer: $referer\r\n',
       ],
       if (m3u8Url.toLowerCase().contains('.m3u8')) ...[
+        // HLS has a separate retry budget for opening failed segments. HTTP
+        // reconnect alone does not prevent the demuxer skipping a failed piece.
+        '-seg_max_retry',
+        '3',
         '-allowed_segment_extensions',
         'ALL',
         '-extension_picky',
         '0',
       ],
     ];
-    final probe = await FFprobeKit.getMediaInformationFromCommandArguments([
-      '-v',
-      'error',
-      '-print_format',
-      'json',
-      '-show_format',
-      '-show_streams',
-      ...inputOptions,
-      '-i',
-      m3u8Url,
-    ]);
+    // HLS duration is in its playlist; probing the remote media first also
+    // downloads segments and can scan a large input before transfer begins.
+    final playlistSeconds = await _playlistDuration(m3u8Url, referer);
+    final probe = playlistSeconds == null
+        ? await FFprobeKit.getMediaInformationFromCommandArguments([
+            '-v',
+            'error',
+            '-print_format',
+            'json',
+            '-show_format',
+            '-show_streams',
+            ...inputOptions,
+            '-i',
+            m3u8Url,
+          ])
+        : null;
     final probedSeconds = double.tryParse(
-      probe.getMediaInformation()?.getDuration() ?? '',
+      probe?.getMediaInformation()?.getDuration() ?? '',
     );
     final expectedSeconds =
-        probedSeconds != null && probedSeconds.isFinite && probedSeconds > 0
-        ? probedSeconds
-        : await _playlistDuration(m3u8Url, referer);
+        playlistSeconds ??
+        (probedSeconds != null && probedSeconds.isFinite && probedSeconds > 0
+            ? probedSeconds
+            : null);
     if (expectedSeconds == null ||
         !expectedSeconds.isFinite ||
         expectedSeconds <= 0) {
@@ -282,7 +293,8 @@ class HlsDownloaderService {
     int currentSizeInBytes = 0;
 
     final arguments = <String>[
-      '-xerror',
+      // Let FFmpeg recover packet warnings. Validate the saved video duration
+      // below so a genuinely truncated transfer still cannot be marked done.
       ...inputOptions,
       '-reconnect',
       '1',
@@ -294,6 +306,10 @@ class HlsDownloaderService {
       '429,500,502,503,504',
       '-reconnect_delay_max',
       '5',
+      '-reconnect_max_retries',
+      '3',
+      '-reconnect_delay_total_max',
+      '15',
     ];
     arguments.add('-i');
     arguments.add(m3u8Url);
@@ -302,8 +318,8 @@ class HlsDownloaderService {
     arguments.addAll(['-map', '0:v:0', '-map', '0:a?']);
     arguments.add('-c');
     arguments.add('copy');
-    arguments.add('-movflags');
-    arguments.add('+faststart');
+    // Offline files are opened from disk. Moving the MP4 index to the front
+    // would rewrite the whole episode after progress has already reached 99%.
     arguments.add('-y');
     arguments.add(partialPath);
 
@@ -314,9 +330,10 @@ class HlsDownloaderService {
       (log) {
         final message = TelemetrySanitizer.text(log.getMessage());
         if (RegExp(
-          r'error|failed|invalid|dimensions not set|HTTP error',
-          caseSensitive: false,
-        ).hasMatch(message)) {
+              r'error|failed|invalid|dimensions not set|HTTP error',
+              caseSensitive: false,
+            ).hasMatch(message) &&
+            !message.contains('Conversion failed!')) {
           lastMediaError = message;
         }
         if (kDebugMode) {
@@ -434,8 +451,44 @@ class HlsDownloaderService {
           final partial = File(partialPath);
           if (await partial.exists()) await partial.delete();
           final failLog = await session.getFailStackTrace();
+          // Native log delivery is asynchronous. Drain it before reporting;
+          // the generic final summary must not hide the actual failure.
+          var detail = lastMediaError;
+          try {
+            final logs = await session.getAllLogs(2000);
+            final errors = logs
+                .map((log) => TelemetrySanitizer.text(log.getMessage()).trim())
+                .where(
+                  (message) =>
+                      !message.contains('Conversion failed!') &&
+                      RegExp(
+                        r'error|failed|invalid|timed out|denied|no space|corrupt|non.monoton',
+                        caseSensitive: false,
+                      ).hasMatch(message),
+                )
+                .toList();
+            if (errors.isNotEmpty) {
+              detail = errors
+                  .skip(errors.length > 5 ? errors.length - 5 : 0)
+                  .join(' | ');
+            }
+          } catch (_) {
+            // Diagnostics must not replace the transfer failure.
+          }
+          detail ??= TelemetrySanitizer.text(failLog);
+          PlaybackDiagnostics.log(
+            PlaybackDiagnostics.newRequestId('download'),
+            'download.session_failed',
+            {
+              'returnCode': returnCode?.getValue(),
+              'bytes': currentSizeInBytes,
+              'durationMs': totalDurationMs,
+              'positionSeconds': currentProgress * expectedSeconds,
+              'error': detail,
+            },
+          );
           throw Exception(
-            'Download failed with state: $state, error: ${lastMediaError ?? TelemetrySanitizer.text(failLog)}',
+            'Download failed with state: $state, return code: ${returnCode?.getValue()}, error: $detail',
           );
         }
         break;

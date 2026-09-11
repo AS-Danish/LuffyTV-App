@@ -52,6 +52,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   Duration _lastPosition = Duration.zero;
   DateTime _lastAdvanced = DateTime.now();
   int _stallRecoveries = 0;
+  int _audioDecodeErrors = 0;
+  DateTime? _firstAudioDecodeError;
   late final Player player;
   late final VideoController controller;
   bool _isLoading = true;
@@ -161,7 +163,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         _lastAdvanced = DateTime.now();
         return;
       }
-      if (DateTime.now().difference(_lastAdvanced).inSeconds >= 12 &&
+      if (DateTime.now().difference(_lastAdvanced).inSeconds >= 45 &&
           _stallRecoveries < 2) {
         unawaited(_recoverStall());
       }
@@ -227,7 +229,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     await _initPlayer();
   }
 
-  Future<void> _recoverStall() async {
+  Future<void> _recoverStall({bool replaceBrokenAudio = false}) async {
     final source = _currentSource;
     if (_isLoading || source == null) return;
     _stallRecoveries++;
@@ -247,6 +249,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       await _playFirstAvailable(
         _playableSources(fresh).where(
           (candidate) =>
+              (!replaceBrokenAudio ||
+                  candidate.playbackKey != source.playbackKey) &&
               candidate.type.toLowerCase() == source.type.toLowerCase() &&
               (candidate.language ?? '').toLowerCase() ==
                   (source.language ?? '').toLowerCase(),
@@ -509,8 +513,29 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       'positionSeconds': player.state.position.inSeconds,
       'error': PlaybackDiagnostics.safeError(message),
     });
-    // Native error events also include recoverable segment/subtitle errors.
-    // Keep the selected server; changing it requires an explicit user action.
+    // A single damaged packet can recover naturally. Repeated audio decoding
+    // failures need a different source even if the video clock keeps moving.
+    if (!message.toLowerCase().contains('error decoding audio') ||
+        !mounted ||
+        _isLoading) {
+      return;
+    }
+    final now = DateTime.now();
+    if (_firstAudioDecodeError == null ||
+        now.difference(_firstAudioDecodeError!) > const Duration(seconds: 10)) {
+      _firstAudioDecodeError = now;
+      _audioDecodeErrors = 0;
+    }
+    if (++_audioDecodeErrors < 3) return;
+    _audioDecodeErrors = 0;
+    if (!_playingLocalFile && _stallRecoveries < 2) {
+      await _recoverStall(replaceBrokenAudio: true);
+    } else {
+      setState(
+        () => _error =
+            'The audio could not be decoded. Choose another server or download this episode again.',
+      );
+    }
   }
 
   Future<void> _retryPlayer() async {
@@ -678,9 +703,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     final startup = Stopwatch()..start();
     await player.stop();
     final ready = Completer<void>();
-    final errors = player.stream.error.listen((message) {
-      if (!ready.isCompleted) ready.completeError(Exception(message));
-    });
+    // libmpv emits recoverable packet/audio warnings here as well as fatal
+    // errors. Progress (or the bounded startup deadline) decides readiness.
     final positions = player.stream.position.listen((position) {
       if (position > (_savedPosition ?? Duration.zero) && !ready.isCompleted) {
         PlaybackDiagnostics.log(_playbackRequestId, 'player.first_progress', {
@@ -702,13 +726,12 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       await Future.wait([
         opened,
         ready.future,
-      ], eagerError: true).timeout(const Duration(seconds: 20));
+      ], eagerError: true).timeout(const Duration(seconds: 45));
     } catch (_) {
       await player.stop();
       rethrow;
     } finally {
       if (!ready.isCompleted) ready.complete();
-      await errors.cancel();
       await positions.cancel();
     }
 

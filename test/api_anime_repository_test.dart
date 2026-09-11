@@ -23,6 +23,28 @@ void main() {
     dotenv.loadFromString(envString: 'API_BASE_URL=https://api.example');
   });
 
+  test(
+    'retries transient DNS errors before failing episode resolution',
+    () async {
+      var requests = 0;
+      final client = MockClient((request) async {
+        if (++requests < 3) {
+          throw http.ClientException('Failed host lookup', request.url);
+        }
+        return jsonResponse({
+          'results': [anime('recovered')],
+        });
+      });
+      final repository = ApiAnimeRepository(client: client);
+      expect(
+        (await repository.searchAnime('recovered')).single.id,
+        'recovered',
+      );
+      expect(requests, 3);
+      client.close();
+    },
+  );
+
   test('all home consumers share one upstream request', () async {
     var requests = 0;
     final client = MockClient((_) async {

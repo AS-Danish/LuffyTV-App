@@ -144,11 +144,22 @@ class ApiAnimeRepository implements AnimeRepository {
     Duration? timeout,
   }) async {
     try {
-      return await _performRequestJson(
-        uri,
-        diagnosticId: diagnosticId,
-        timeout: timeout,
-      );
+      for (var attempt = 0; ; attempt++) {
+        try {
+          return await _performRequestJson(
+            uri,
+            diagnosticId: diagnosticId,
+            timeout: timeout,
+          );
+        } on http.ClientException {
+          // DNS and connection failures are often transient on mobile networks.
+          // Retry only transport failures, never authentication or rate limits.
+          if (attempt >= 2) rethrow;
+          await Future<void>.delayed(
+            Duration(milliseconds: 500 * (attempt + 1)),
+          );
+        }
+      }
     } catch (error, stack) {
       AppTelemetry.report(
         'api.request_failed',
