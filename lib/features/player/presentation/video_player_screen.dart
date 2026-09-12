@@ -19,6 +19,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../home/data/models/anime.dart';
 
+class _PlaybackCancelled implements Exception {
+  const _PlaybackCancelled();
+}
+
 class VideoPlayerScreen extends ConsumerStatefulWidget {
   final String animeTitle;
   final String animeSlug;
@@ -78,6 +82,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   bool _playingLocalFile = false;
   bool _subtitlesEnabled = true;
   late String _playbackRequestId;
+  bool _disposed = false;
+
+  bool get _isActive => !_disposed && mounted;
+
+  void _ensureActive() {
+    if (!_isActive) throw const _PlaybackCancelled();
+  }
 
   @override
   void initState() {
@@ -112,6 +123,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     );
     _playerErrorSubscription = player.stream.error.listen(_handlePlaybackError);
     _bufferingSubscription = player.stream.buffering.listen((buffering) {
+      if (!_isActive) return;
       if (buffering && !_isLoading) {
         _bufferingTimer ??= Stopwatch()..start();
       } else if (!buffering && _bufferingTimer != null) {
@@ -124,7 +136,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       }
     });
     _playerCompletedSubscription = player.stream.completed.listen((completed) {
-      if (completed) {
+      if (completed && _isActive) {
         _saveProgress(completed: true);
         if (mounted) setState(() => _episodeCompleted = true);
       }
@@ -133,6 +145,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     _initPlayer();
     _findNextEpisode();
     _positionSubscription = player.stream.position.listen((position) {
+      if (!_isActive) return;
       if (position != _lastPosition) {
         _lastPosition = position;
         _lastAdvanced = DateTime.now();
@@ -209,8 +222,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     if (next == null || _isLoading) return;
     setState(() => _isLoading = true);
     await _saveProgress(completed: _episodeCompleted);
+    if (!_isActive) return;
     await player.stop();
-    if (!mounted) return;
+    if (!_isActive) return;
     setState(() {
       _episodeNumber = next;
       _nextEpisode = null;
@@ -231,7 +245,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   Future<void> _recoverStall({bool replaceBrokenAudio = false}) async {
     final source = _currentSource;
-    if (_isLoading || source == null) return;
+    if (!_isActive || _isLoading || source == null) return;
     _stallRecoveries++;
     setState(() {
       _isLoading = true;
@@ -242,8 +256,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       if (native is NativePlayer) {
         await native.setProperty('hls-bitrate', 'min');
       }
+      _ensureActive();
       final fresh = await _fetchPlayableWatchData(forceRefresh: true);
-      if (!mounted) return;
+      _ensureActive();
       _watchData = fresh;
       _attemptedSources.clear();
       await _playFirstAvailable(
@@ -256,19 +271,22 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
                   (source.language ?? '').toLowerCase(),
         ),
       );
+    } on _PlaybackCancelled {
+      return;
     } catch (_) {
-      if (mounted) {
+      if (_isActive) {
         setState(
           () => _error = 'This stream stalled. Retry or choose another server.',
         );
       }
     } finally {
       _lastAdvanced = DateTime.now();
-      if (mounted) setState(() => _isLoading = false);
+      if (_isActive) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _saveProgress({bool completed = false}) async {
+    if (_disposed) return;
     try {
       await LocalDbService.saveProgress(
         animeSlug: widget.animeSlug,
@@ -307,15 +325,21 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
 
   Future<void> _loadPlaybackPreferences() async {
     final prefs = await SharedPreferences.getInstance();
+    _ensureActive();
     _subtitlesEnabled = prefs.getBool('playback_subtitles') ?? true;
     final native = player.platform;
     if (native is NativePlayer) {
       // A bounded read-ahead absorbs short CDN stalls without waiting for it to fill.
       await native.setProperty('cache', 'yes');
+      _ensureActive();
       await native.setProperty('cache-secs', '60');
+      _ensureActive();
       await native.setProperty('cache-pause-initial', 'no');
+      _ensureActive();
       await native.setProperty('cache-pause-wait', '1');
+      _ensureActive();
       await native.setProperty('demuxer-max-back-bytes', '${8 * 1024 * 1024}');
+      _ensureActive();
       await native.setProperty(
         'hls-bitrate',
         (prefs.getBool('playback_high_quality') ?? false) ? 'max' : '2500000',
@@ -400,6 +424,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Future<WatchData> _fetchPlayableWatchData({bool forceRefresh = false}) async {
+    _ensureActive();
     final repo = ref.read(animeRepositoryProvider);
     Object? lastError;
     final attempts = forceRefresh ? 1 : 2;
@@ -416,6 +441,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           forceRefresh: forceRefresh || attempt > 0,
           diagnosticId: _playbackRequestId,
         );
+        _ensureActive();
         final playable = _playableSources(watchData);
         if (playable.isNotEmpty) {
           PlaybackDiagnostics.log(
@@ -430,6 +456,8 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           return watchData;
         }
         lastError = Exception('The API returned an empty source list.');
+      } on _PlaybackCancelled {
+        rethrow;
       } catch (error, stack) {
         AppTelemetry.report(
           'player.resolve_failed',
@@ -451,6 +479,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         await Future<void>.delayed(
           Duration(milliseconds: attempt == 0 ? 350 : 900),
         );
+        _ensureActive();
       }
     }
     PlaybackDiagnostics.log(_playbackRequestId, 'player.resolve_exhausted', {
@@ -467,6 +496,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }) async {
     Object? lastError;
     for (final source in sources) {
+      _ensureActive();
       if (identical(source, exclude)) continue;
       if (!_attemptedSources.add(source.playbackKey)) continue;
       try {
@@ -477,13 +507,17 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
           'proxied': source.proxyUrl?.trim().isNotEmpty == true,
         });
         await _playSource(source);
+        _ensureActive();
         PlaybackDiagnostics.log(_playbackRequestId, 'player.source_opened', {
           'server': source.server,
           'type': source.type,
           'host': PlaybackDiagnostics.host(source.playableUrl),
         });
         return source;
+      } on _PlaybackCancelled {
+        rethrow;
       } catch (error, stack) {
+        if (!_isActive) throw const _PlaybackCancelled();
         AppTelemetry.report(
           'player.source_failed',
           error,
@@ -507,6 +541,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Future<void> _handlePlaybackError(String message) async {
+    if (!_isActive) return;
     PlaybackDiagnostics.log(_playbackRequestId, 'player.runtime_error', {
       'server': _currentSource?.server ?? '',
       'host': PlaybackDiagnostics.host(_currentSource?.playableUrl),
@@ -516,7 +551,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     // A single damaged packet can recover naturally. Repeated audio decoding
     // failures need a different source even if the video clock keeps moving.
     if (!message.toLowerCase().contains('error decoding audio') ||
-        !mounted ||
+        !_isActive ||
         _isLoading) {
       return;
     }
@@ -539,7 +574,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Future<void> _retryPlayer() async {
-    if (_isLoading) return;
+    if (!_isActive || _isLoading) return;
     _attemptedSources.clear();
     _automaticRefreshUsed = false;
     setState(() {
@@ -547,6 +582,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       _error = null;
     });
     await player.stop();
+    if (!_isActive) return;
     _playbackRequestId = PlaybackDiagnostics.newRequestId('retry');
     PlaybackDiagnostics.log(_playbackRequestId, 'player.manual_retry', {
       'slug': widget.animeSlug,
@@ -562,6 +598,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         _loadPlaybackPreferences(),
         DownloadNotifier.loadStoredDownloads(),
       ]);
+      _ensureActive();
       final downloadId = '${widget.animeSlug}_$_episodeNumber';
       final downloads = ref.read(downloadItemsProvider);
       var localItem = downloads
@@ -595,10 +632,13 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         }
 
         await player.open(Media(localItem.localM3u8Path!));
+        _ensureActive();
         if (_savedPosition != null) {
           await player.seek(_savedPosition!);
+          _ensureActive();
         }
-        player.play();
+        await player.play();
+        _ensureActive();
 
         if (_subtitlesEnabled && localItem.subtitles.isNotEmpty) {
           _setDownloadedSubtitle(localItem.subtitles.first);
@@ -633,8 +673,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       }
 
       await _playWithRecovery(watchData);
+      _ensureActive();
 
       if (mounted) setState(() => _isLoading = false);
+    } on _PlaybackCancelled {
+      return;
     } catch (e, stack) {
       AppTelemetry.report(
         'player.initialization_failed',
@@ -660,9 +703,11 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     try {
       await _playFirstAvailable(_playableSources(data), exclude: exclude);
     } catch (_) {
+      _ensureActive();
       if (_automaticRefreshUsed) rethrow;
       _automaticRefreshUsed = true;
       final refreshed = await _fetchPlayableWatchData(forceRefresh: true);
+      _ensureActive();
       _watchData = refreshed;
       _skipData = refreshed.skipData;
       // A renewed signature may repair the same media URL. Allow one fresh
@@ -673,6 +718,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   }
 
   Future<void> _playSource(VideoSource source) async {
+    _ensureActive();
     _currentSource = source;
     _currentLocalSubtitle = null;
     final playableUrl = source.playableUrl;
@@ -702,11 +748,14 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
     // progress or an error before reporting that a server works.
     final startup = Stopwatch()..start();
     await player.stop();
+    _ensureActive();
     final ready = Completer<void>();
     // libmpv emits recoverable packet/audio warnings here as well as fatal
     // errors. Progress (or the bounded startup deadline) decides readiness.
     final positions = player.stream.position.listen((position) {
-      if (position > (_savedPosition ?? Duration.zero) && !ready.isCompleted) {
+      if (_isActive &&
+          position > (_savedPosition ?? Duration.zero) &&
+          !ready.isCompleted) {
         PlaybackDiagnostics.log(_playbackRequestId, 'player.first_progress', {
           'elapsedMs': startup.elapsedMilliseconds,
           'server': source.server,
@@ -719,7 +768,9 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
       await player.open(
         Media(url, httpHeaders: headers, start: _savedPosition),
       );
+      _ensureActive();
       await player.play();
+      _ensureActive();
       await ready.future;
     }();
     try {
@@ -728,14 +779,16 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
         ready.future,
       ], eagerError: true).timeout(const Duration(seconds: 45));
     } catch (_) {
-      await player.stop();
+      if (_isActive) await player.stop();
       rethrow;
     } finally {
       if (!ready.isCompleted) ready.complete();
       await positions.cancel();
     }
 
+    _ensureActive();
     await player.play();
+    _ensureActive();
 
     // Default to the first available subtitle track if any exist
     final captions = _captionTracks(source);
@@ -1032,6 +1085,7 @@ class _VideoPlayerScreenState extends ConsumerState<VideoPlayerScreen>
   @override
   void dispose() {
     _saveProgress();
+    _disposed = true;
     _progressSaveTimer?.cancel();
     _seekAnimationTimer?.cancel();
     _playerErrorSubscription?.cancel();

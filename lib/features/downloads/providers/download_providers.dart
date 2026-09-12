@@ -145,6 +145,24 @@ class DownloadNotifier extends Notifier<List<DownloadItem>> {
         id,
         (item) => item.copyWith(state: DownloadState.downloading),
       );
+      // Signed media URLs can age while several downloads wait in the queue.
+      // Refresh immediately before transfer, while retaining the original as a
+      // fallback if the provider is briefly unavailable.
+      if (refreshSource != null) {
+        try {
+          final refreshed = await refreshSource();
+          if (!identical(_jobs[id], job)) return;
+          m3u8Url = refreshed.url;
+          referer = refreshed.referer;
+        } catch (error, stack) {
+          AppTelemetry.report(
+            'download.source_preflight_refresh_failed',
+            error,
+            stack: stack,
+            context: {'host': Uri.tryParse(m3u8Url)?.host},
+          );
+        }
+      }
       // Subtitle proxy links can expire, so save them before the much longer
       // video transfer starts.
       final localSubtitles = await downloader.downloadSubtitles(id, subtitles);

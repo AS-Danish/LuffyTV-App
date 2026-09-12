@@ -347,10 +347,7 @@ class _AnimeDetailsScreenState extends ConsumerState<AnimeDetailsScreen> {
                 .where(
                   (candidate) =>
                       candidate.isPlayable &&
-                      candidate.type.toLowerCase() ==
-                          source.type.toLowerCase() &&
-                      (candidate.language ?? '').toLowerCase() ==
-                          (source.language ?? '').toLowerCase(),
+                      matchesDownloadAudio(source, candidate),
                 )
                 .firstOrNull;
             if (replacement == null) {

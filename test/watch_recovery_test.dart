@@ -187,4 +187,23 @@ void main() {
     );
     expect(result.source, healthy);
   });
+
+  test(
+    'provider language metadata may disappear without rejecting the same dub',
+    () async {
+      final selected = source('old', type: 'dub', language: 'English');
+      final refreshed = source('fresh', type: 'dub');
+      expect(matchesDownloadAudio(selected, refreshed), true);
+      final result = await prepareDownloadSource(
+        selected: selected,
+        initial: watch([selected]),
+        refresh: () async => watch([refreshed]),
+        loadPlaylist: (candidate) async {
+          if (candidate.server == 'old') throw Exception('HTTP 403');
+          return '#EXTM3U\n#EXTINF:5,\nfirst.ts';
+        },
+      );
+      expect(result.source.server, 'fresh');
+    },
+  );
 }

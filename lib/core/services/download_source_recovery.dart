@@ -7,6 +7,20 @@ class PreparedDownloadSource {
   const PreparedDownloadSource(this.source, this.watchData, this.playlist);
 }
 
+bool matchesDownloadAudio(VideoSource selected, VideoSource candidate) {
+  final selectedType = selected.type.trim().toLowerCase();
+  final candidateType = candidate.type.trim().toLowerCase();
+  if (selectedType != candidateType) return false;
+  if (!selectedType.startsWith('dub')) return true;
+  final selectedLanguage = (selected.language ?? '').trim().toLowerCase();
+  final candidateLanguage = (candidate.language ?? '').trim().toLowerCase();
+  // Providers do not consistently include a language tag on every refresh.
+  // An absent tag must not make the same dub source look incompatible.
+  return selectedLanguage.isEmpty ||
+      candidateLanguage.isEmpty ||
+      selectedLanguage == candidateLanguage;
+}
+
 /// Two bounded rounds: available sources, then freshly resolved sources.
 /// Keep the user's audio selection while rejecting aliases within each round.
 Future<PreparedDownloadSource> prepareDownloadSource({
@@ -23,9 +37,7 @@ Future<PreparedDownloadSource> prepareDownloadSource({
     final candidates = [if (round == 0) selected, ...data.sources];
     for (final candidate in candidates) {
       if (!candidate.isPlayable ||
-          candidate.type.toLowerCase() != selected.type.toLowerCase() ||
-          (candidate.language ?? '').toLowerCase() !=
-              (selected.language ?? '').toLowerCase() ||
+          !matchesDownloadAudio(selected, candidate) ||
           !attempted.add(candidate.playbackKey)) {
         continue;
       }
